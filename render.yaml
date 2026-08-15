@@ -1,0 +1,31 @@
+# Render.com blueprint — AquarIApp Backend
+# Suba a pasta `server/deploy-backend` num repositório Git e crie um Web Service
+# a partir deste arquivo (Render lê automaticamente) OU siga o README-deploy.md.
+services:
+  - type: web
+    name: aquariapp-ia
+    runtime: node
+    plan: free
+    buildCommand: npm install --omit=dev
+    startCommand: node index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: PLANTNET_API_KEY
+        sync: false
+      - key: ADMIN_KEY
+        sync: false
+      # URL pública do front (ex.: https://aquariapp.netlify.app)
+      - key: ALLOWED_ORIGINS
+        value: https://SEU_FRONT_URL
+      # URL pública deste backend (ex.: https://aquariapp-ia.onrender.com)
+      - key: PUBLIC_BASE_URL
+        value: https://SEU_BACKEND_URL

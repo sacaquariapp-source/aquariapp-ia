@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AquarIApp · Admin de Catálogos</title>
+<style>
+  :root {
+    --deep: #030d1c;
+    --ocean: #081a33;
+    --mid: #0f2f5e;
+    --accent: #00b4d8;
+    --accentLight: #7ce5ef;
+    --text: #eef4ff;
+    --muted: #8ba5c4;
+    --border: #1d4e92;
+    --success: #38b000;
+    --warning: #fb8c00;
+    --danger: #ef5350;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: var(--deep);
+    color: var(--text);
+  }
+  .wrap { max-width: 820px; margin: 0 auto; padding: 24px 16px 60px; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+  header h1 { font-size: 20px; margin: 0; }
+  header p { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+  .badge { background: rgba(0,180,216,.15); border: 1px solid var(--accent); color: var(--accentLight); border-radius: 999px; padding: 4px 12px; font-size: 11px; font-weight: 700; }
+  .voltar { color: var(--accentLight); text-decoration: none; font-size: 13px; font-weight: 700; }
+  .card { background: var(--mid); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  .campo { margin-bottom: 12px; }
+  .campo label { display: block; color: var(--accentLight); font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; margin-bottom: 6px; }
+  input, select, textarea, button { font-family: inherit; }
+  input, select, textarea {
+    width: 100%;
+    background: var(--ocean);
+    border: 1.5px solid var(--border);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 11px 12px;
+    font-size: 14px;
+  }
+  textarea { resize: vertical; min-height: 56px; }
+  .btn { border: none; border-radius: 12px; padding: 12px 18px; font-size: 14px; font-weight: 800; cursor: pointer; }
+  .btn-primario { background: var(--accent); color: var(--deep); }
+  .btn-sucesso { background: var(--success); color: #fff; }
+  .btn-escuro { background: var(--ocean); color: var(--text); border: 1px solid var(--accent); }
+  .btn-perigo { background: rgba(239,83,80,.15); color: var(--danger); border: 1px solid var(--danger); }
+  .btn-pequeno { padding: 7px 12px; font-size: 12px; border-radius: 9px; }
+  .barra { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+  .seguranca input { font-family: monospace; }
+  .abas { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .aba { background: var(--ocean); border: 1.5px solid var(--border); color: var(--muted); border-radius: 10px; padding: 10px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .aba.ativa { background: rgba(0,180,216,.15); border-color: var(--accent); color: var(--accentLight); }
+  .busca { display: flex; gap: 8px; margin-bottom: 14px; }
+  .busca input { flex: 1; }
+  .item { background: var(--mid); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+  .item-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .item-titulo { font-size: 15px; font-weight: 800; margin: 0; }
+  .item-sub { color: var(--muted); font-size: 12px; margin: 3px 0 0; }
+  .item-desc { color: var(--muted); font-size: 12px; margin: 8px 0 0; line-height: 1.5; }
+  .acoes { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  .modal-bg { display: none; position: fixed; inset: 0; background: rgba(2,10,20,.85); align-items: center; justify-content: center; padding: 16px; z-index: 50; }
+  .modal { background: var(--mid); border: 1px solid var(--accent); border-radius: 16px; padding: 20px; width: 100%; max-width: 620px; max-height: 92vh; overflow: auto; }
+  .modal h2 { margin: 0 0 14px; font-size: 17px; }
+  .linha2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .linha3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .vazio { text-align: center; color: var(--muted); padding: 36px 0; }
+  .aviso { background: rgba(251,140,0,.1); border: 1px solid var(--warning); color: var(--warning); border-radius: 10px; padding: 10px 12px; font-size: 13px; margin-bottom: 14px; }
+  .stats { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
+  .stat { background: var(--mid); border: 1px solid var(--accent); border-radius: 12px; padding: 10px 16px; }
+  .stat b { font-size: 18px; }
+  .stat span { color: var(--muted); font-size: 11px; margin-left: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>📚 Admin de Catálogos</h1>
+      <p><a class="voltar" href="/admin">← Voltar ao painel</a></p>
+    </div>
+    <span class="badge">Admin</span>
+  </header>
+
+  <div class="card seguranca">
+    <div class="campo" style="margin:0">
+      <label>Chave de administração</label>
+      <div class="barra" style="margin:0">
+        <input type="password" id="chave" placeholder="Digite a chave (ADMIN_KEY do servidor)" autocomplete="off" />
+        <button class="btn btn-escuro" id="btnSalvarChave" style="flex:none">Entrar</button>
+        <button class="btn btn-perigo" id="btnSair" style="flex:none">Sair</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="aviso" class="aviso" style="display:none"></div>
+
+  <div class="abas" id="abas"></div>
+
+  <div class="stats">
+    <div class="stat"><b id="stTotal">0</b><span id="stRotuloTotal">itens</span></div>
+    <div class="stat"><b id="stVisiveis">0</b><span>exibidos</span></div>
+  </div>
+
+  <div class="busca">
+    <input id="busca" placeholder="Buscar no catálogo..." />
+    <button class="btn btn-primario" id="btnNovo" style="flex:none">+ Novo item</button>
+  </div>
+
+  <div id="lista"></div>
+</div>
+
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <h2 id="modalTitulo">Novo item</h2>
+    <div id="formCampos"></div>
+    <div class="linha2" style="margin-top:6px">
+      <button class="btn btn-escuro" id="btnCancelar">Cancelar</button>
+      <button class="btn btn-sucesso" id="btnSalvar">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  var CHAVE_KEY = 'aquariapp:admin-key';
+  var chave = localStorage.getItem(CHAVE_KEY) || '';
+  var catalogoAtual = 'fauna';
+  var listaAtual = [];
+  var editando = null;
+  var $ = function (id) { return document.getElementById(id); };
+
+  var TIPOS_CATEGORIA = ['alimentos', 'condicionadores', 'testes', 'fertilizantes', 'medicamentos', 'midias'];
+
+  var CAMPOS_ESPECIE = [
+    { k: 'id', t: 'text', r: 'ID' },
+    { k: 'tipo', t: 'select', r: 'Tipo', o: ['fauna', 'flora'] },
+    { k: 'nomeComum', t: 'text', r: 'Nome comum *' },
+    { k: 'nomeCientifico', t: 'text', r: 'Nome científico' },
+    { k: 'familia', t: 'text', r: 'Família' },
+    { k: 'origem', t: 'text', r: 'Origem' },
+    { k: 'tamanho', t: 'text', r: 'Tamanho' },
+    { k: 'temperatura', t: 'text', r: 'Temperatura' },
+    { k: 'ph', t: 'text', r: 'pH' },
+    { k: 'dureza', t: 'text', r: 'Dureza' },
+    { k: 'dieta', t: 'text', r: 'Dieta' },
+    { k: 'comportamento', t: 'text', r: 'Comportamento' },
+    { k: 'aquarioMinimo', t: 'text', r: 'Aquário mínimo' },
+    { k: 'dificuldade', t: 'select', r: 'Dificuldade', o: ['', 'Fácil', 'Médio', 'Avançado'] },
+    { k: 'iluminacao', t: 'text', r: 'Iluminação' },
+    { k: 'co2', t: 'text', r: 'CO2' },
+    { k: 'crescimento', t: 'text', r: 'Crescimento' },
+    { k: 'tipoPlanta', t: 'text', r: 'Tipo de planta' },
+    { k: 'observacoes', t: 'textarea', r: 'Observações' },
+    { k: 'palavrasChave', t: 'array', r: 'Palavras-chave (separadas por vírgula)' },
+  ];
+
+  var CAMPOS_FAUNA_LEVE = CAMPOS_ESPECIE.filter(function (c) {
+    return ['id', 'tipo', 'nomeComum', 'nomeCientifico', 'familia', 'observacoes', 'palavrasChave'].indexOf(c.k) !== -1;
+  });
+
+  var CAMPOS_FLORA = [
+    { k: 'id', t: 'text', r: 'ID' },
+    { k: 'tipo', t: 'select', r: 'Tipo', o: ['flora'] },
+    { k: 'nomeComum', t: 'text', r: 'Nome comum *' },
+    { k: 'nomeCientifico', t: 'text', r: 'Nome científico' },
+    { k: 'familia', t: 'text', r: 'Família' },
+    { k: 'origem', t: 'text', r: 'Origem' },
+    { k: 'iluminacao', t: 'text', r: 'Iluminação' },
+    { k: 'co2', t: 'text', r: 'CO2' },
+    { k: 'crescimento', t: 'text', r: 'Crescimento' },
+    { k: 'tipoPlanta', t: 'text', r: 'Tipo de planta' },
+    { k: 'observacoes', t: 'textarea', r: 'Observações' },
+    { k: 'palavrasChave', t: 'array', r: 'Palavras-chave (separadas por vírgula)' },
+  ];
+
+  var CAMPOS_ALGA = [
+    { k: 'id', t: 'text', r: 'ID' },
+    { k: 'nome', t: 'text', r: 'Nome *' },
+    { k: 'nomesAlternativos', t: 'array', r: 'Nomes alternativos (vírgula)' },
+    { k: 'aspecto', t: 'textarea', r: 'Aspecto' },
+    { k: 'causas', t: 'textarea', r: 'Causas' },
+    { k: 'tratamento', t: 'textarea', r: 'Tratamento' },
+    { k: 'pragasBiologicas', t: 'array', r: 'Pragas biológicas (vírgula)' },
+    { k: 'dicas', t: 'textarea', r: 'Dicas' },
+  ];
+
+  var CAMPOS_MICRO = [
+    { k: 'id', t: 'text', r: 'ID' },
+    { k: 'nome', t: 'text', r: 'Nome *' },
+    { k: 'nomesAlternativos', t: 'array', r: 'Nomes alternativos (vírgula)' },
+    { k: 'aspecto', t: 'textarea', r: 'Aspecto' },
+    { k: 'classificacao', t: 'text', r: 'Classificação (Benéfico, Atenção...)' },
+    { k: 'acao', t: 'textarea', r: 'Ação' },
+    { k: 'tratamento', t: 'textarea', r: 'Tratamento' },
+    { k: 'dicas', t: 'textarea', r: 'Dicas' },
+  ];
+
+  var CAMPOS_PRODUTO = [
+    { k: 'id', t: 'text', r: 'ID' },
+    { k: 'marca', t: 'text', r: 'Marca' },
+    { k: 'nome', t: 'text', r: 'Nome *' },
+    { k: 'tipo', t: 'text', r: 'Tipo (flocos, grânulos...)' },
+    { k: 'indicacao', t: 'textarea', r: 'Indicação' },
+    { k: 'princípios', t: 'textarea', r: 'Princípios ativos' },
+    { k: 'uso', t: 'textarea', r: 'Como usar' },
+    { k: 'observacoes', t: 'textarea', r: 'Observações' },
+    { k: 'palavrasChave', t: 'array', r: 'Palavras-chave (vírgula)' },
+  ];
+
+  var PRODUTOS_CATEGORIAS = [
+    { nome: 'alimentos', rotulo: 'Alimentos' },
+    { nome: 'condicionadores', rotulo: 'Condicionadores' },
+    { nome: 'testes', rotulo: 'Testes' },
+    { nome: 'fertilizantes', rotulo: 'Fertilizantes' },
+    { nome: 'medicamentos', rotulo: 'Remédios' },
+    { nome: 'midias', rotulo: 'Mídias' },
+  ];
+
+  var CATEGORIAS_PRODUTO = PRODUTOS_CATEGORIAS.map(function (c) {
+    return {
+      nome: c.nome,
+      rotulo: c.rotulo,
+      fonte: 'produtos',
+      filtro: c.nome,
+      titulo: ['nome', 'marca'],
+      campos: CAMPOS_PRODUTO,
+    };
+  });
+
+  var CATALOGOS = [
+    {
+      nome: 'fauna', rotulo: 'Fauna', multi: true,
+      fontes: ['especies', 'faunaBrasileira', 'faunaComplementar'], fontePadrao: 'especies',
+      titulo: ['nomeComum', 'nomeCientifico'], campos: CAMPOS_ESPECIE,
+    },
+    {
+      nome: 'flora', rotulo: 'Flora', titulo: ['nomeComum', 'nomeCientifico'],
+      campos: CAMPOS_FLORA,
+    },
+    {
+      nome: 'algas', rotulo: 'Algas', titulo: ['nome'],
+      campos: CAMPOS_ALGA,
+    },
+    {
+      nome: 'microorganismos', rotulo: 'Microorganismos', titulo: ['nome'],
+      campos: CAMPOS_MICRO,
+    },
+    {
+      nome: 'doencas', rotulo: 'Doenças', titulo: ['nome'],
+      campos: [
+        { k: 'id', t: 'text', r: 'ID' },
+        { k: 'nome', t: 'text', r: 'Nome *' },
+        { k: 'nomesAlternativos', t: 'array', r: 'Nomes alternativos (vírgula)' },
+        { k: 'sintomas', t: 'textarea', r: 'Sintomas' },
+        { k: 'causa', t: 'textarea', r: 'Causa' },
+        { k: 'tratamento', t: 'textarea', r: 'Tratamento' },
+        { k: 'medicamentos', t: 'array', r: 'Medicamentos (vírgula)' },
+        { k: 'dicas', t: 'textarea', r: 'Dicas' },
+      ],
+    },
+  ].concat(CATEGORIAS_PRODUTO);
+
+  function catAtual() {
+    return CATALOGOS.filter(function (c) { return c.nome === catalogoAtual; })[0];
+  }
+
+  function catEhProduto(cat) {
+    return cat.fonte === 'produtos' || cat.nome === 'produtos';
+  }
+
+  function normalizar(t) {
+    return String(t == null ? '' : t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  }
+
+  function chaveItem(cat, item) {
+    if (cat.nome === 'doencas' || cat.nome === 'algas' || cat.nome === 'microorganismos') {
+      return normalizar(item.id || item.nome);
+    }
+    if (catEhProduto(cat)) return normalizar(item.id || (item.marca + ' ' + item.nome));
+    return normalizar(item.nomeCientifico || item.nomeComum || item.id);
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function cabecalho() {
+    var h = { 'Content-Type': 'application/json' };
+    if (chave) h['X-Admin-Key'] = chave;
+    return h;
+  }
+
+  var logado = false;
+
+  async function tentarLoginAutomatico() {
+    try {
+      var r = await fetch('/admin/status', { method: 'GET', credentials: 'same-origin' });
+      if (r.ok) { logado = true; return true; }
+    } catch (e) {}
+    return false;
+  }
+
+  async function loginComChave() {
+    var k = $('chave').value.trim();
+    if (!k) return;
+    try {
+      var r = await fetch('/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ chave: k }),
+      });
+      if (r.ok) {
+        chave = k;
+        localStorage.setItem(CHAVE_KEY, chave);
+        logado = true;
+        mostrarAviso('');
+        carregar();
+      } else {
+        mostrarAviso('Chave inválida.');
+      }
+    } catch (e) {
+      mostrarAviso('Erro ao entrar: ' + e.message);
+    }
+  }
+
+  async function sair() {
+    try { await fetch('/admin/logout', { method: 'POST', credentials: 'same-origin' }); } catch (e) {}
+    logado = false;
+    $('lista').innerHTML = '<div class="vazio">Digite a chave de administração para continuar.</div>';
+  }
+
+  async function iniciar() {
+    var ok = await tentarLoginAutomatico();
+    if (ok) {
+      mostrarAviso('');
+      carregar();
+    } else {
+      $('lista').innerHTML = '<div class="vazio">Digite a chave de administração para continuar.</div>';
+    }
+  }
+
+  function mostrarAviso(msg, ok) {
+    var a = $('aviso');
+    if (!msg) { a.style.display = 'none'; return; }
+    a.textContent = msg;
+    a.style.borderColor = ok ? '#38b000' : '#fb8c00';
+    a.style.color = ok ? '#38b000' : '#fb8c00';
+    a.style.display = 'block';
+  }
+
+  function montarAbas() {
+    $('abas').innerHTML = CATALOGOS.map(function (c) {
+      return '<button class="aba' + (c.nome === catalogoAtual ? ' ativa' : '') + '" data-nome="' + c.nome + '">' + c.rotulo + '</button>';
+    }).join('');
+    Array.prototype.forEach.call(document.querySelectorAll('.aba'), function (b) {
+      b.addEventListener('click', function () {
+        catalogoAtual = b.getAttribute('data-nome');
+        editando = null;
+        carregar();
+      });
+    });
+  }
+
+  function tituloItem(cat, item) {
+    return cat.titulo.map(function (k) { return item[k]; }).filter(Boolean).join(' · ');
+  }
+
+  function resumoItem(cat, item) {
+    if (catEhProduto(cat)) return item.marca + (item.tipo ? ' — ' + item.tipo : '');
+    if (cat.nome === 'doencas') return item.sintomas || '';
+    return item.familia || item.origem || '';
+  }
+
+  function cardItem(cat, item, index) {
+    var desc = resumoItem(cat, item);
+    var extra = '';
+    if (catEhProduto(cat)) {
+      var catRotulo = TIPOS_CATEGORIA.indexOf(item.categoria) !== -1 ? item.categoria : (item.categoria || '');
+      extra = ' <span class="stat" style="padding:4px 10px;margin:0"><b style="font-size:12px">' + esc(catRotulo) + '</b></span>';
+    }
+    if (cat.nome === 'doencas') {
+      var meds = (item.medicamentos || []).join(', ');
+      if (meds) extra = ' <span class="stat" style="padding:4px 10px;margin:0;border-color:#38b000"><b style="font-size:12px;color:#38b000">💊 ' + esc(meds) + '</b></span>';
+    }
+    if (cat.multi && item._fonte) {
+      var fonteRotulo = { especies: 'Espécies', faunaBrasileira: 'Fauna BR', faunaComplementar: 'Fauna Comp' };
+      extra += ' <span class="stat" style="padding:4px 10px;margin:0;border-color:#7ce5ef"><b style="font-size:11px;color:#7ce5ef">' + esc(fonteRotulo[item._fonte] || item._fonte) + '</b></span>';
+    }
+    return '<div class="item">' +
+      '<div class="item-topo"><div>' +
+        '<p class="item-titulo">' + esc(tituloItem(cat, item)) + '</p>' +
+        (desc ? '<p class="item-sub">' + esc(desc) + '</p>' : '') +
+        extra +
+      '</div></div>' +
+      '<div class="acoes">' +
+        '<button class="btn btn-escuro btn-pequeno" data-editar="' + index + '">✏️ Editar</button>' +
+        '<button class="btn btn-perigo btn-pequeno" data-excluir="' + index + '">🗑️ Excluir</button>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function renderizar() {
+    var cat = catAtual();
+    var termo = normalizar($('busca').value);
+    var visiveis = listaAtual.filter(function (item) {
+      if (!termo) return true;
+      var alvo = normalizar(JSON.stringify(item));
+      return alvo.indexOf(termo) !== -1;
+    });
+    $('stTotal').textContent = listaAtual.length;
+    $('stVisiveis').textContent = visiveis.length;
+    $('lista').innerHTML = visiveis.length
+      ? visiveis.map(function (item, i) { return cardItem(cat, item, i); }).join('')
+      : '<div class="vazio">Nenhum item encontrado.</div>';
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-editar]'), function (b) {
+      b.addEventListener('click', function () {
+        abrirModal(visiveis[Number(b.getAttribute('data-editar'))]);
+      });
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-excluir]'), function (b) {
+      b.addEventListener('click', function () {
+        excluirItem(visiveis[Number(b.getAttribute('data-excluir'))]);
+      });
+    });
+  }
+
+  async function carregarMulti(cat) {
+    var resultados = await Promise.all(cat.fontes.map(async function (fonte) {
+      var res = await fetch('/catalogos/' + fonte, { headers: cabecalho(), credentials: 'same-origin' });
+      if (!res.ok) return { fonte: fonte, itens: [] };
+      return { fonte: fonte, itens: await res.json() };
+    }));
+    var ordem = { especies: 0, faunaBrasileira: 1, faunaComplementar: 2 };
+    resultados.sort(function (a, b) { return (ordem[a.fonte] || 9) - (ordem[b.fonte] || 9); });
+    var mapa = new Map();
+    resultados.forEach(function (r) {
+      r.itens.forEach(function (item) {
+        var k = chaveItem({ nome: 'especies' }, item);
+        if (!mapa.has(k)) mapa.set(k, Object.assign({ _fonte: r.fonte }, item));
+      });
+    });
+    return [...mapa.values()];
+  }
+
+  async function carregar() {
+    montarAbas();
+    try {
+      var cat = catAtual();
+      var dados;
+      if (cat.multi) {
+        dados = await carregarMulti(cat);
+      } else {
+        var origem = cat.fonte || catalogoAtual;
+        var res = await fetch('/catalogos/' + origem, { headers: cabecalho(), credentials: 'same-origin' });
+        if (res.status === 401) {
+          logado = false;
+          $('lista').innerHTML = '<div class="vazio">Digite a chave de administração para continuar.</div>';
+          return;
+        }
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        dados = await res.json();
+        if (cat.filtro) dados = dados.filter(function (i) { return i.categoria === cat.filtro; });
+      }
+      listaAtual = dados;
+      mostrarAviso('');
+      renderizar();
+    } catch (e) {
+      mostrarAviso('Erro ao carregar: ' + e.message);
+    }
+  }
+
+  function valorCampo(item, campo) {
+    var v = item[campo.k];
+    if (campo.t === 'array') return Array.isArray(v) ? v.join(', ') : '';
+    return v == null ? '' : v;
+  }
+
+  function inputCampo(campo, item) {
+    var valor = valorCampo(item, campo);
+    var id = 'f_' + campo.k;
+    if (campo.t === 'select') {
+      var opcoes = campo.o.map(function (o) {
+        return '<option value="' + esc(o) + '"' + (String(valor) === String(o) ? ' selected' : '') + '>' + esc(o || '—') + '</option>';
+      }).join('');
+      return '<div class="campo"><label>' + campo.r + '</label><select id="' + id + '">' + opcoes + '</select></div>';
+    }
+    if (campo.t === 'textarea') {
+      return '<div class="campo"><label>' + campo.r + '</label><textarea id="' + id + '">' + esc(valor) + '</textarea></div>';
+    }
+    return '<div class="campo"><label>' + campo.r + '</label><input id="' + id + '" value="' + esc(valor) + '" /></div>';
+  }
+
+  function abrirModal(item) {
+    editando = item || null;
+    var cat = catAtual();
+    $('modalTitulo').textContent = editando ? 'Editar item' : 'Novo item · ' + cat.rotulo;
+    $('formCampos').innerHTML = cat.campos.map(function (c) { return inputCampo(c, editando || {}); }).join('');
+    $('modalBg').style.display = 'flex';
+  }
+
+  function fecharModal() {
+    $('modalBg').style.display = 'none';
+    editando = null;
+  }
+
+  function montarItem() {
+    var cat = catAtual();
+    var item = {};
+    cat.campos.forEach(function (campo) {
+      var el = $('f_' + campo.k);
+      if (!el) return;
+      var valor = el.value;
+      if (campo.t === 'array') {
+        item[campo.k] = valor.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+      } else {
+        item[campo.k] = valor;
+      }
+    });
+    return item;
+  }
+
+  function alvoGravacao() {
+    var cat = catAtual();
+    if (cat.multi) return (editando && editando._fonte) || cat.fontePadrao;
+    return cat.fonte || cat.nome;
+  }
+
+  async function salvarItem() {
+    var item = montarItem();
+    var cat = catAtual();
+    if (cat.filtro) item.categoria = cat.filtro;
+    var obrigatorio = cat.campos.find(function (c) { return / \*$/.test(c.r); });
+    if (obrigatorio && !item[obrigatorio.k]) {
+      mostrarAviso('Preencha o campo obrigatório: ' + obrigatorio.r);
+      return;
+    }
+    try {
+      var alvo = alvoGravacao();
+      var res;
+      if (editando) {
+        res = await fetch('/catalogos/' + alvo + '/item/' + encodeURIComponent(chaveItem(cat, editando)), {
+          method: 'PUT', headers: cabecalho(), credentials: 'same-origin', body: JSON.stringify(item),
+        });
+      } else {
+        res = await fetch('/catalogos/' + alvo + '/item', {
+          method: 'POST', headers: cabecalho(), credentials: 'same-origin', body: JSON.stringify(item),
+        });
+      }
+      if (!res.ok) {
+        var corpo = await res.json().catch(function () { return {}; });
+        mostrarAviso(corpo.erro || 'Erro ao salvar.');
+        return;
+      }
+      fecharModal();
+      carregar();
+    } catch (e) {
+      mostrarAviso('Erro ao salvar: ' + e.message);
+    }
+  }
+
+  async function excluirItem(item) {
+    var cat = catAtual();
+    if (!confirm('Excluir "' + tituloItem(cat, item) + '"?')) return;
+    try {
+      var alvo = cat.multi ? (item._fonte || cat.fontePadrao) : (cat.fonte || cat.nome);
+      var res = await fetch('/catalogos/' + alvo + '/item/' + encodeURIComponent(chaveItem(cat, item)), {
+        method: 'DELETE', headers: cabecalho(), credentials: 'same-origin',
+      });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      carregar();
+    } catch (e) {
+      mostrarAviso('Erro ao excluir: ' + e.message);
+    }
+  }
+
+  $('btnSalvarChave').addEventListener('click', loginComChave);
+  $('btnSair').addEventListener('click', sair);
+  $('btnNovo').addEventListener('click', function () {
+    if (!logado) { mostrarAviso('Digite a chave primeiro.'); return; }
+    abrirModal(null);
+  });
+  $('btnSalvar').addEventListener('click', salvarItem);
+  $('btnCancelar').addEventListener('click', fecharModal);
+  $('modalBg').addEventListener('click', function (e) { if (e.target === $('modalBg')) fecharModal(); });
+  $('busca').addEventListener('input', renderizar);
+
+  $('chave').value = chave;
+  iniciar();
+</script>
+</body>
+</html>

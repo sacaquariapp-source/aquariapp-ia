@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AquarIApp · Painel Admin</title>
+<style>
+  :root {
+    --deep: #030d1c;
+    --ocean: #081a33;
+    --mid: #0f2f5e;
+    --accent: #00b4d8;
+    --accentLight: #7ce5ef;
+    --text: #eef4ff;
+    --muted: #8ba5c4;
+    --border: #1d4e92;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: var(--deep);
+    color: var(--text);
+    display: flex;
+    min-height: 100vh;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .wrap { width: 100%; max-width: 560px; }
+  header { text-align: center; margin-bottom: 24px; }
+  header h1 { font-size: 22px; margin: 0; }
+  header p { color: var(--muted); font-size: 13px; margin: 6px 0 0; }
+  .card {
+    background: var(--mid);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 18px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 14px;
+    cursor: pointer;
+    text-decoration: none;
+    color: inherit;
+    transition: border-color .15s;
+  }
+  .card:hover { border-color: var(--accent); }
+  .card .icone {
+    width: 48px; height: 48px; border-radius: 14px;
+    background: var(--ocean); border: 1px solid var(--accent);
+    display: flex; align-items: center; justify-content: center; font-size: 22px;
+  }
+  .card .info { flex: 1; }
+  .card .info b { display: block; font-size: 16px; }
+  .card .info span { color: var(--muted); font-size: 12px; }
+  .card .seta { color: var(--accent); font-size: 22px; font-weight: 800; }
+  .aviso {
+    background: rgba(251,140,0,.1); border: 1px solid #fb8c00; color: #fb8c00;
+    border-radius: 10px; padding: 10px 12px; font-size: 12px; line-height: 17px; text-align: center;
+  }
+  .btn { border: none; border-radius: 12px; padding: 12px 18px; font-size: 14px; font-weight: 800; cursor: pointer; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🐠 Painel Admin · AquarIApp</h1>
+    <p>Gerencie ofertas, cupons e catálogos do app</p>
+  </header>
+
+  <a class="card" href="/admin-ofertas">
+    <div class="icone">🛒</div>
+    <div class="info">
+      <b>Cupons e Ofertas</b>
+      <span>Promoções de produtos e cupons de desconto de lojas parceiras</span>
+    </div>
+    <div class="seta">›</div>
+  </a>
+
+  <a class="card" href="/admin-catalogos">
+    <div class="icone">📚</div>
+    <div class="info">
+      <b>Catálogos</b>
+      <span>Espécies, fauna, doenças e produtos — adicione itens que o app atualiza na hora</span>
+    </div>
+    <div class="seta">›</div>
+  </a>
+
+  <div class="aviso">
+    🔑 Use a chave de administração (ADMIN_KEY do servidor) em cada painel.
+    Alterações publicadas aparecem para os usuários do app sem atualização na Play Store.
+  </div>
+
+  <div style="text-align:center">
+    <button class="btn" id="btnSair" style="background:rgba(239,83,80,.15);color:#ef5350;border:1px solid #ef5350">Sair da sessão</button>
+  </div>
+</div>
+
+<script>
+  document.getElementById('btnSair').addEventListener('click', async function () {
+    try { await fetch('/admin/logout', { method: 'POST', credentials: 'same-origin' }); } catch (e) {}
+    location.reload();
+  });
+</script>
+</body>
+</html>

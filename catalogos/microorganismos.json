@@ -1,0 +1,66 @@
+[
+ {
+  "id": "copepodes",
+  "nome": "Copépodes (Microcrustáceos)",
+  "nomesAlternativos": [
+   "copepode",
+   "copepodo",
+   "pontinhos brancos",
+   "pulguinhas",
+   "dafnia",
+   "microcrustaceo"
+  ],
+  "aspecto": "Pontinhos brancos minúsculos (< 2 mm) que saltitam rápido pelo vidro. Fêmeas carregam duas bolsas de ovos na cauda.",
+  "classificacao": "Benéfico",
+  "acao": "Não faça nada! Sinal de biologia excelente. Limpam detritos e servem de alimento vivo natural para filhotes e peixes pequenos.",
+  "tratamento": "Nenhum necessário.",
+  "dicas": "Aproveite como alimento vivo; não use medicamentos, pois podem prejudicar o ciclo do aquário."
+ },
+ {
+  "id": "planarias",
+  "nome": "Planárias (Vermes Chatos)",
+  "nomesAlternativos": [
+   "planaria",
+   "verme chato",
+   "flatworm",
+   "vermes brancos chatos"
+  ],
+  "aspecto": "Vermes achatados que deslizam lentamente pelo vidro, como lesmas pequenas. Cabeça triangular em formato de seta com dois pontinhos pretos.",
+  "classificacao": "Atenção / Perigo",
+  "acao": "Predadoras: atacam e matam ovos de peixes e filhotes de camarões (ex.: Red Cherry). Não fazem mal a peixes adultos.",
+  "tratamento": "Reduza drasticamente a alimentação (multiplicam com excesso de ração). Use armadilhas de vidro para planárias ou produtos à base de extrato de casca de betel (ex.: No-Planaria).",
+  "dicas": "Sifonar o fundo, lavar decorações e evitar excesso de comida."
+ },
+ {
+  "id": "nematoides",
+  "nome": "Nematoides e Oligoquetas (Vermes de Vidro)",
+  "nomesAlternativos": [
+   "nematode",
+   "oligoqueta",
+   "verme de vidro",
+   "vermes finos",
+   "vermes brancos finos",
+   "hydra verme"
+  ],
+  "aspecto": "Vermes brancos, extremamente finos e compridos (como fios de cabelo ou minhocas pequenas), que ondulam na água ou andam pelo vidro. Cabeça arredondada (diferente da planária).",
+  "classificacao": "Inofensivo",
+  "acao": "Inofensivos; não atacam nenhum animal. Aparecem com excesso de matéria orgânica no substrato.",
+  "tratamento": "Sifonagem de fundo nas TPAs e redução da ração diária. Os peixes os devoram naturalmente.",
+  "dicas": "Apenas sifonar o substrato e reduzir a alimentação resolve."
+ },
+ {
+  "id": "hidras",
+  "nome": "Hidras de Água Doce",
+  "nomesAlternativos": [
+   "hydra",
+   "hidra",
+   "mini anemona",
+   "anemonas pequenas"
+  ],
+  "aspecto": "Parecem pequenas plantas ou mini-anêmonas transparentes/esverdeadas grudadas no vidro ou folhas, com base fixa e tentáculos finos balançando.",
+  "classificacao": "Atenção",
+  "acao": "Usam células urticantes nos tentáculos para paralisar presas. Perigo para alevinos e micro-camarões em aquários de reprodução.",
+  "tratamento": "Reduzir alimentos vivos minúsculos (náuplios de artêmia) em excesso. Caramujos Pomácea (Ampulária) ajudam a comê-las; medicamentos específicos para vermes também eliminam.",
+  "dicas": "Evite superalimentação com náuplios; remova manualmente o que conseguir."
+ }
+]

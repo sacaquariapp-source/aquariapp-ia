@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AquarIApp · Votação do Concurso</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: linear-gradient(160deg, #0A1C35, #04101F, #020B18);
+    color: #F5F8FC;
+    min-height: 100vh;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; color: #FFC857; }
+  .sub { color: #8EA4C0; font-size: 13px; margin-bottom: 20px; }
+  .box {
+    background: rgba(18, 54, 102, 0.55);
+    border: 1px solid rgba(0, 184, 217, 0.3);
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  .premio { color: #FFC857; font-weight: 800; font-size: 15px; margin: 6px 0; }
+  .periodo { color: #8EA4C0; font-size: 12px; margin: 2px 0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+  .card {
+    background: rgba(10, 28, 53, 0.62);
+    border: 1px solid rgba(0, 184, 217, 0.3);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .card img { width: 100%; height: 180px; object-fit: cover; display: block; }
+  .card-body { padding: 10px; }
+  .card-name { font-weight: 800; font-size: 14px; margin: 0; }
+  .card-votos { color: #8EA4C0; font-size: 12px; margin: 2px 0 8px; }
+  button {
+    width: 100%;
+    background: #00B8D9;
+    color: #001020;
+    border: none;
+    border-radius: 10px;
+    padding: 10px;
+    font-weight: 900;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .msg {
+    text-align: center; padding: 20px; color: #8EA4C0;
+  }
+  .ok { color: #39D98A; font-weight: 800; text-align: center; margin-top: 12px; }
+  .erro { color: #FF5C6C; font-weight: 700; text-align: center; margin-top: 12px; }
+</style>
+</head>
+<body>
+  <h1>🏆 Votação — Concurso AquarIApp</h1>
+  <p class="sub">Vote no aquário que você mais gostou. Cada dispositivo pode votar 1 vez.</p>
+  <div id="estado"></div>
+  <div id="conteudo"><div class="msg">Carregando…</div></div>
+
+<script>
+(function () {
+  var API = window.AQUARIAPP_API || '';
+  var DEVICE_KEY = 'aquariapp:voto-dispositivo';
+  var jaVotou = false;
+
+  function obterId() {
+    try {
+      var id = localStorage.getItem(DEVICE_KEY);
+      if (!id) {
+        id = 'web:' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+        localStorage.setItem(DEVICE_KEY, id);
+      }
+      return id;
+    } catch (e) {
+      return 'web:' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+    }
+  }
+
+  function el(id) { return document.getElementById(id); }
+
+  function fmt(ts) {
+    if (!ts) return '—';
+    var d = new Date(ts);
+    var p = function (n) { return String(n).padStart(2, '0'); };
+    return p(d.getDate()) + '/' + p(d.getMonth() + 1) + '/' + d.getFullYear() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  }
+
+  function render(dados) {
+    if (!dados || dados.ativo !== true || !dados.config) {
+      el('conteudo').innerHTML = '<div class="msg">Nenhum concurso ativo neste momento.</div>';
+      return;
+    }
+    var cfg = dados.config;
+    var box = '';
+    box += '<div class="box">';
+    box += '<h1>' + (cfg.categoria || 'Concurso de Aquários') + '</h1>';
+    if (cfg.premio) box += '<div class="premio">🎁 Prêmio: ' + cfg.premio + '</div>';
+    box += '<div class="periodo">📅 Inscrições: ' + fmt(cfg.inscricaoDe) + ' até ' + fmt(cfg.inscricaoAte) + '</div>';
+    box += '<div class="periodo">🗳️ Votação: ' + fmt(cfg.votacaoDe) + ' até ' + fmt(cfg.votacaoAte) + '</div>';
+    box += '</div>';
+    el('estado').innerHTML = box;
+
+    var conteudo = '';
+    if (dados.fase === 'votacao') {
+      if (dados.inscricoes && dados.inscricoes.length > 0) {
+        conteudo += '<div class="grid">';
+        dados.inscricoes.forEach(function (i) {
+          conteudo += '<div class="card">';
+          if (i.foto) conteudo += '<img src="' + i.foto + '" alt="Foto do participante" />';
+          conteudo += '<div class="card-body">';
+          conteudo += '<p class="card-name">' + (i.apelido || i.nome || 'Participante') + '</p>';
+          conteudo += '<p class="card-votos">' + (i.votos || 0) + ' votos</p>';
+          conteudo += '<button data-insc="' + i.id + '" ' + (jaVotou ? 'disabled' : '') + '>Votar</button>';
+          conteudo += '</div></div>';
+        });
+        conteudo += '</div>';
+        if (jaVotou) conteudo += '<div class="ok">✅ Você já votou neste concurso.</div>';
+      } else {
+        conteudo += '<div class="msg">Nenhum participante inscrito ainda.</div>';
+      }
+    } else if (dados.fase === 'encerrado') {
+      if (dados.ganhador) {
+        conteudo += '<div class="box" style="border-color:#FFC857;text-align:center;">';
+        conteudo += '<div style="font-weight:900;color:#FFC857;">🏆 VENCEDOR</div>';
+        if (dados.ganhador.foto) conteudo += '<img src="' + dados.ganhador.foto + '" style="width:100%;max-width:360px;border-radius:12px;margin:10px 0;" />';
+        conteudo += '<div style="font-size:20px;font-weight:900;">' + (dados.ganhador.apelido || dados.ganhador.nome) + '</div>';
+        conteudo += '<div style="color:#8EA4C0;">' + (dados.ganhador.votos || 0) + ' votos</div>';
+        if (dados.ganhador.premio) conteudo += '<div style="color:#FFC857;font-weight:800;margin-top:6px;">🎁 ' + dados.ganhador.premio + '</div>';
+        conteudo += '</div>';
+      } else {
+        conteudo += '<div class="msg">🗳️ A votação terminou. Aguarde a divulgação do vencedor.</div>';
+      }
+    } else {
+      conteudo += '<div class="msg">As inscrições ainda estão abertas. A votação começa ' + fmt(cfg.votacaoDe) + '.</div>';
+    }
+    el('conteudo').innerHTML = conteudo;
+
+    Array.prototype.forEach.call(document.querySelectorAll('button[data-insc]'), function (btn) {
+      btn.addEventListener('click', function () {
+        votar(btn.getAttribute('data-insc'), btn);
+      });
+    });
+  }
+
+  function votar(inscricaoId, btn) {
+    btn.disabled = true;
+    fetch((API ? API : '') + '/concursos/votar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inscricaoId: inscricaoId, dispositivoId: obterId() }),
+    })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (res.ok) {
+          jaVotou = true;
+          el('conteudo').insertAdjacentHTML('beforeend', '<div class="ok">✅ Voto registrado!</div>');
+          carregar();
+        } else if (res.j && res.j.jaVotou) {
+          jaVotou = true;
+          el('conteudo').insertAdjacentHTML('beforeend', '<div class="erro">Este dispositivo já votou.</div>');
+          carregar();
+        } else {
+          btn.disabled = false;
+          el('conteudo').insertAdjacentHTML('beforeend', '<div class="erro">' + ((res.j && res.j.erro) || 'Erro ao votar.') + '</div>');
+        }
+      })
+      .catch(function () {
+        btn.disabled = false;
+        el('conteudo').insertAdjacentHTML('beforeend', '<div class="erro">Servidor indisponível. Tente novamente.</div>');
+      });
+  }
+
+  function carregar() {
+    fetch((API ? API : '') + '/concursos')
+      .then(function (r) { return r.json(); })
+      .then(render)
+      .catch(function () {
+        el('conteudo').innerHTML = '<div class="msg">Não foi possível carregar. Verifique sua conexão.</div>';
+      });
+  }
+
+  carregar();
+})();
+</script>
+</body>
+</html>

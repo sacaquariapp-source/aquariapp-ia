@@ -1,0 +1,239 @@
+[
+ {
+  "id": "ictio",
+  "nome": "Ictio (Ponto Branco / Ich)",
+  "nomesAlternativos": [
+   "ictio",
+   "ich",
+   "ponto branco",
+   "doença do ponto branco",
+   "white spot",
+   "ictioftiriase"
+  ],
+  "sintomas": "Pontos brancos como grãos de sal espalhados pelo corpo e nadadeiras, peixe esfregando-se em objetos, apatia e perda de apetite.",
+  "causa": "Parasita Ichthyophthirius multifiliis, favorecido por queda brusca de temperatura e estresse.",
+  "tratamento": "Elevar gradualmente a temperatura para 28-30 °C (acelera o ciclo do parasita e encurta a fase protegida), tratar com verde de malaquita + azul de metileno por 5-7 dias e adicionar sal grosso 1-3 g/L (evitar em peixes de pele nua, como cascudos e arraias).",
+  "medicamentos": [
+   "Verde de malaquita",
+   "Azul de metileno",
+   "Anti-íctio"
+  ],
+  "dicas": "Fazer TPA de 30% antes e durante o tratamento; manter a dose conforme a bula. Quarentena de peixes novos por pelo menos 21 dias previne novos surtos."
+ },
+ {
+  "id": "oodinio",
+  "nome": "Oodínio (Doença do Veludo)",
+  "nomesAlternativos": [
+   "oodinio",
+   "veludo",
+   "gold dust",
+   "ferrugem",
+   "velvet"
+  ],
+  "sintomas": "Camada dourada ou acinzentada aveludada sobre o corpo, brilho \"metálico\", nadadeiras coladas ao corpo e respiração acelerada.",
+  "causa": "Parasita dinoflagelado Piscinoodinium pillulare (e similares).",
+  "tratamento": "Medicamentos à base de cobre ou verde de malaquita, com o aquário no escuro (o parasita é fotossensível).",
+  "medicamentos": [
+   "Verde de malaquita",
+   "Sulfato de cobre",
+   "Azul de metileno"
+  ],
+  "dicas": "Escurecer o aquário durante o tratamento; melhorar alimentação para reforçar a imunidade."
+ },
+ {
+  "id": "fungo",
+  "nome": "Fungo (Saprolegnia)",
+  "nomesAlternativos": [
+   "fungo",
+   "saprolegnia",
+   "algodao",
+   "cotonete",
+   "mancha branca algodonosa"
+  ],
+  "sintomas": "Tufos brancos semelhantes a algodão na pele, boca ou nadadeiras, geralmente sobre feridas pré-existentes.",
+  "causa": "Fungos Saprolegnia/Achlya, favorecidos por ferimentos e má qualidade da água.",
+  "tratamento": "Banhos de sal grosso (1 colher por 10 L) por alguns dias e/ou antifúngicos (verde de malaquita). Corrigir a água.",
+  "medicamentos": [
+   "Verde de malaquita",
+   "Sal grosso de cozinha (banho)",
+   "Azul de metileno"
+  ],
+  "dicas": "Tratar a causa (ferida) e melhorar a filtragem; remover peixes com fungos avançados para quarentena."
+ },
+ {
+  "id": "podridao-nadadeiras",
+  "nome": "Podridão de Nadadeiras (Fin Rot)",
+  "nomesAlternativos": [
+   "podridao de nadadeira",
+   "fin rot",
+   "cauda desfiada",
+   "nadadeiras desfiadas",
+   "borda branca na nadadeira"
+  ],
+  "sintomas": "Nadadeiras com bordas esbranquiçadas, desfiadas ou encolhendo; podem apresentar manchas vermelhas na base.",
+  "causa": "Bactérias (Aeromonas, Pseudomonas) em água suja ou com alta carga orgânica.",
+  "tratamento": "TPA diária de 30%, melhorar filtragem e usar antibacteriano de amplo espectro (nitrofurazona, oxitetraciclina).",
+  "medicamentos": [
+   "Nitrofurazona",
+   "Oxitetraciclina",
+   "Antibiótico para peixes"
+  ],
+  "dicas": "Se a podridão chegar ao corpo, isolar o peixe; evite superlotação."
+ },
+ {
+  "id": "hidropisia",
+  "nome": "Hidropisia (Barriga Inchada)",
+  "nomesAlternativos": [
+   "hidropisia",
+   "dropsy",
+   "barriga inchada",
+   "escamas pinadas",
+   "pinecone"
+  ],
+  "sintomas": "Abdômen distendido e escamas eriçadas (aspecto de pinha), olhos saltados, letargia e perda de apetite.",
+  "causa": "Infecção bacteriana interna, falência renal ou parasitária; quase sempre ligada à má qualidade da água.",
+  "tratamento": "Difícil. Isolar, TPA e medicação antibacteriana; banho de Sal Amargo (Epsom) ajuda a reduzir o inchaço por osmose. Tratar o mais cedo possível.",
+  "medicamentos": [
+   "Antibiótico interno (oxitetraciclina)",
+   "Sal de aquário",
+   "Sal Amargo (Epsom)"
+  ],
+  "dicas": "Prognóstico reservado; previna com água limpa, boa alimentação e quarentena."
+ },
+ {
+  "id": "pop-eye",
+  "nome": "Pop-eye (Olho Saltado)",
+  "nomesAlternativos": [
+   "pop eye",
+   "exoftalmia",
+   "olho saltado",
+   "olho inchado",
+   "olhos esbugalhados"
+  ],
+  "sintomas": "Um ou dois olhos saltados para fora da órbita, por vezes esbranquiçados ou com inchaço.",
+  "causa": "Infecção bacteriana, trauma, parasitas ou gás na água (síndrome da bolha).",
+  "tratamento": "TPA e antibacteriano de amplo espectro; se gás, reduzir supersaturação (melhorar trocas gasosas).",
+  "medicamentos": [
+   "Antibiótico de amplo espectro",
+   "Metileno (suporte)"
+  ],
+  "dicas": "Verificar qualidade da água e evitar superalimentação."
+ },
+ {
+  "id": "buraco-cabeca",
+  "nome": "Buracos na Cabeça (Hexamita)",
+  "nomesAlternativos": [
+   "hexamita",
+   "buraco na cabeca",
+   "hole in the head",
+   "craters",
+   "linha da cabeça"
+  ],
+  "sintomas": "Buracos/depressões na cabeça e linha lateral, podendo evoluir para feridas abertas.",
+  "causa": "Parasita intestinal Spironucleus (Hexamita) agravado por estresse e dieta pobre.",
+  "tratamento": "Metronidazol (flagyl) na ração ou na água + melhora da dieta e da água.",
+  "medicamentos": [
+   "Metronidazol",
+   "Levamisol"
+  ],
+  "dicas": "Evitar carvão ativado durante o tratamento com metronidazol."
+ },
+ {
+  "id": "tuberculose",
+  "nome": "Tuberculose de Peixes / Coluna Curvada",
+  "nomesAlternativos": [
+   "tuberculose",
+   "mycobacterium",
+   "coluna curvada",
+   "spine curvature",
+   "torta"
+  ],
+  "sintomas": "Coluna curvada, perda de peso progressiva, manchas esbranquiçadas, nadadeiras desfiadas e letargia.",
+  "causa": "Mycobacterium spp.; crônica e difícil de tratar.",
+  "tratamento": "Dificílimo; quarentena e tratamento paliativo com antibióticos (rifampicina, kanamicina) sob orientação de veterinário.",
+  "medicamentos": [
+   "Kanamicina",
+   "Rifampicina"
+  ],
+  "dicas": "Cuidado: pode ser transmissível; higienizar equipamentos e descartar peixes em estado avançado."
+ },
+ {
+  "id": "parasitas-externos",
+  "nome": "Parasitas Externos (Anfílitos e Piolhos)",
+  "nomesAlternativos": [
+   "argulus",
+   "lernaea",
+   "piolho de peixe",
+   "verme ancora",
+   "anchor worm",
+   "fish louse",
+   "parasita"
+  ],
+  "sintomas": "Pequenos \"vermes\" ou caranguejos visíveis na pele/barbatanas, peixe esfregando-se, feridas e vermelhidão.",
+  "causa": "Crustáceos parasitas como Argulus (piolho) e Lernaea (verme-âncora), introduzidos por novos peixes sem quarentena.",
+  "tratamento": "Remoção manual com pinça, seguida de medicamento contra parasitas (triclorfon / praziquantel).",
+  "medicamentos": [
+   "Triclorfon",
+   "Praziquantel",
+   "Anti-parasitário externo"
+  ],
+  "dicas": "Sempre quarentenar peixes novos por 15 dias antes de introduzir no aquário."
+ },
+ {
+  "id": "bexiga-natatória",
+  "nome": "Problema de Bexiga Natatória",
+  "nomesAlternativos": [
+   "bexiga natatoria",
+   "peixe de cabeça para baixo",
+   "peixe afundando",
+   "nada de lado",
+   "flutuacao"
+  ],
+  "sintomas": "Peixe nadando de cabeça para baixo, afundando ou boiando no fundo/superfície, incapaz de manter o equilíbrio.",
+  "causa": "Superalimentação, constipação, gases, ou infecção/genética (comum em Bettas e Dourados).",
+  "tratamento": "Jejum de 2-3 dias, oferecer ervilha descascada, manter água limpa; banho de Sal Amargo (Epsom) alivia a constipação. Tratar infecção se houver.",
+  "medicamentos": [
+   "Ervilha (dieta)",
+   "Sal Amargo (Epsom)",
+   "Sal de aquário"
+  ],
+  "dicas": "Não superalimentar; oferecer alimentos que afundam em vez de flutuar."
+ },
+ {
+  "id": "constipacao",
+  "nome": "Constipação (Prisão de Ventre)",
+  "nomesAlternativos": [
+   "constipacao",
+   "prisao de ventre",
+   "constipated",
+   "sem fezes",
+   "ventre inchado"
+  ],
+  "sintomas": "Ventre levemente inchado, fezes não eliminadas, peixe com dificuldade de nadar e menos ativo.",
+  "causa": "Superalimentação, dieta seca sem fibra e falta de movimento.",
+  "tratamento": "Jejum de 2-3 dias, oferecer ervilha verde descascada (cozida) e banho de Sal Amargo (Epsom) para estimular a evacuação.",
+  "medicamentos": [
+   "Sal Amargo (Epsom)",
+   "Ervilha (dieta)"
+  ],
+  "dicas": "Sal Amargo (sulfato de magnésio) é o laxante clássico de aquário: faça banho curto em recipiente com água do aquário (1 colher de chá por 10 L), por 15-20 minutos, em casos de prisão de ventre."
+ },
+ {
+  "id": "estresse",
+  "nome": "Estresse / Letargia / Perda de Cor",
+  "nomesAlternativos": [
+   "estresse",
+   "stress",
+   "letargia",
+   "perda de cor",
+   "apatia",
+   "natas",
+   "desbotado"
+  ],
+  "sintomas": "Peixe apático, parado no fundo ou na superfície, cores apagadas, respiração acelerada, sem comer.",
+  "causa": "Má qualidade da água (amônia/nitrito), temperatura inadequada, mudanças bruscas, transporte ou bullying.",
+  "tratamento": "Corrigir parâmetros da água, TPA, estabilizar temperatura e oferecer alimentação leve; reduzir estressores.",
+  "medicamentos": [],
+  "dicas": "Testar amônia e nitrito; muitas vezes o \"remédio\" é água limpa e menos luz."
+ }
+]

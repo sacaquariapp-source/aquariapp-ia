@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AquarIApp · Admin de Ofertas</title>
+<style>
+  :root {
+    --deep: #030d1c;
+    --ocean: #081a33;
+    --mid: #0f2f5e;
+    --accent: #00b4d8;
+    --accentLight: #7ce5ef;
+    --text: #eef4ff;
+    --muted: #8ba5c4;
+    --border: #1d4e92;
+    --success: #38b000;
+    --warning: #fb8c00;
+    --danger: #ef5350;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: var(--deep);
+    color: var(--text);
+  }
+  .wrap { max-width: 780px; margin: 0 auto; padding: 24px 16px 60px; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+  header h1 { font-size: 20px; margin: 0; }
+  header p { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+  .badge { background: rgba(0,180,216,.15); border: 1px solid var(--accent); color: var(--accentLight); border-radius: 999px; padding: 4px 12px; font-size: 11px; font-weight: 700; }
+  .card { background: var(--mid); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  .stats { display: flex; gap: 10px; margin-bottom: 18px; }
+  .stat { flex: 1; background: var(--mid); border: 1px solid var(--accent); border-radius: 12px; padding: 12px; text-align: center; }
+  .stat b { display: block; font-size: 20px; }
+  .stat span { color: var(--muted); font-size: 11px; }
+  .barra { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; }
+  input, select, textarea, button {
+    font-family: inherit;
+  }
+  input, select, textarea {
+    width: 100%;
+    background: var(--ocean);
+    border: 1.5px solid var(--border);
+    color: var(--text);
+    border-radius: 10px;
+    padding: 11px 12px;
+    font-size: 14px;
+  }
+  textarea { resize: vertical; min-height: 64px; }
+  .linha { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .linha3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+  .campo { margin-bottom: 12px; }
+  .campo label { display: block; color: var(--accentLight); font-size: 11px; font-weight: 700; letter-spacing: .5px; text-transform: uppercase; margin-bottom: 6px; }
+  .btn {
+    border: none; border-radius: 12px; padding: 12px 18px; font-size: 14px; font-weight: 800; cursor: pointer;
+  }
+  .btn-primario { background: var(--accent); color: var(--deep); }
+  .btn-sucesso { background: var(--success); color: #fff; }
+  .btn-escuro { background: var(--ocean); color: var(--text); border: 1px solid var(--accent); }
+  .btn-perigo { background: rgba(239,83,80,.15); color: var(--danger); border: 1px solid var(--danger); }
+  .btn-pequeno { padding: 7px 12px; font-size: 12px; border-radius: 9px; }
+  .topo-card { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .oferta-titulo { font-size: 16px; font-weight: 800; margin: 0; }
+  .oferta-loja { color: var(--muted); font-size: 12px; margin: 3px 0 8px; }
+  .oferta-desc { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 0 0 12px; }
+  .etiquetas { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .tag { background: var(--ocean); border: 1px solid var(--border); border-radius: 8px; padding: 4px 10px; font-size: 12px; color: var(--text); }
+  .tag.accent { border-color: var(--accent); color: var(--accentLight); }
+  .tag.warn { border-color: var(--warning); color: var(--warning); }
+  .tag.ok { border-color: var(--success); color: var(--success); }
+  .preco-promo { color: var(--success); font-weight: 900; font-size: 18px; }
+  .preco-orig { color: var(--muted); text-decoration: line-through; font-size: 13px; margin-left: 6px; }
+  .cupom-codigo { font-family: monospace; font-weight: 800; letter-spacing: 1px; background: rgba(0,180,216,.12); border: 1px dashed var(--accent); color: var(--accentLight); border-radius: 8px; padding: 6px 12px; display: inline-block; }
+  .acoes { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .inativo { opacity: .55; }
+  .modal-bg { display: none; position: fixed; inset: 0; background: rgba(2,10,20,.85); align-items: center; justify-content: center; padding: 16px; z-index: 50; }
+  .modal { background: var(--mid); border: 1px solid var(--accent); border-radius: 16px; padding: 20px; width: 100%; max-width: 520px; max-height: 92vh; overflow: auto; }
+  .modal h2 { margin: 0 0 16px; font-size: 17px; }
+  .seguranca { margin-bottom: 16px; }
+  .seguranca input { font-family: monospace; }
+  .vazio { text-align: center; color: var(--muted); padding: 40px 0; }
+  .aviso { background: rgba(251,140,0,.1); border: 1px solid var(--warning); color: var(--warning); border-radius: 10px; padding: 10px 12px; font-size: 13px; margin-bottom: 14px; }
+  .switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; }
+  .switch input { width: auto; }
+  .radio-tipo { display: flex; gap: 8px; margin-bottom: 14px; }
+  .radio-tipo button { flex: 1; background: var(--ocean); border: 1.5px solid var(--border); color: var(--muted); border-radius: 10px; padding: 11px; font-size: 14px; font-weight: 700; cursor: pointer; }
+  .radio-tipo button.ativa { background: rgba(0,180,216,.15); border-color: var(--accent); color: var(--accentLight); }
+  .voltar { color: var(--accentLight); text-decoration: none; font-size: 13px; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>🛒 Cupons e Ofertas</h1>
+      <p>Painel de administração do AquarIApp · <a class="voltar" href="/admin">← Voltar ao painel</a></p>
+    </div>
+    <span class="badge">Admin</span>
+  </header>
+
+  <div class="card seguranca">
+    <div class="campo" style="margin:0">
+      <label>Chave de administração</label>
+      <div class="barra" style="margin:0">
+        <input type="password" id="chave" placeholder="Digite a chave (ADMIN_KEY do servidor)" autocomplete="off" />
+        <button class="btn btn-escuro" id="btnSalvarChave" style="flex:none">Entrar</button>
+        <button class="btn btn-perigo" id="btnSair" style="flex:none">Sair</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="aviso" class="aviso" style="display:none"></div>
+
+  <div class="stats">
+    <div class="stat"><b id="stTotal">0</b><span>ofertas</span></div>
+    <div class="stat"><b id="stProdutos">0</b><span>produtos</span></div>
+    <div class="stat"><b id="stCupons">0</b><span>cupons</span></div>
+    <div class="stat"><b id="stAtivos">0</b><span>ativas</span></div>
+  </div>
+
+  <div class="barra">
+    <button class="btn btn-primario" id="btnNova" style="flex:1">+ Nova oferta / cupom</button>
+    <button class="btn btn-escuro" id="btnRecarregar">↻</button>
+  </div>
+
+  <div id="lista"></div>
+</div>
+
+<div class="modal-bg" id="modalBg">
+  <div class="modal">
+    <h2 id="modalTitulo">Nova oferta</h2>
+    <div class="radio-tipo">
+      <button data-tipo="produto" class="ativa" id="btnTipoProduto">🏷️ Produto em promoção</button>
+      <button data-tipo="cupom" id="btnTipoCupom">🎟️ Cupom de desconto</button>
+    </div>
+
+    <div class="campo"><label>Ícone (emoji)</label><input id="f_icone" placeholder="🏷️" maxlength="4" /></div>
+    <div class="campo"><label>Título *</label><input id="f_titulo" placeholder="Ex: Color Bits 45g" /></div>
+    <div class="campo"><label>Lojista *</label><input id="f_lojista" placeholder="Ex: Aquário Store" /></div>
+    <div class="campo"><label>Descrição</label><textarea id="f_descricao" placeholder="Detalhes da oferta..."></textarea></div>
+
+    <div id="camposProduto">
+      <div class="linha">
+        <div class="campo"><label>Preço original (R$)</label><input id="f_precoOrig" type="number" step="0.01" min="0" placeholder="29,90" /></div>
+        <div class="campo"><label>Preço promocional (R$)</label><input id="f_precoPromo" type="number" step="0.01" min="0" placeholder="19,90" /></div>
+      </div>
+    </div>
+
+    <div id="camposCupom" style="display:none">
+      <div class="linha">
+        <div class="campo"><label>Código do cupom</label><input id="f_codigo" placeholder="Ex: AQUARIA10" /></div>
+        <div class="campo"><label>Desconto</label><input id="f_desconto" placeholder="Ex: 10% OFF / R$ 20" /></div>
+      </div>
+    </div>
+
+    <div class="linha">
+      <div class="campo"><label>Validade</label><input id="f_validade" placeholder="Ex: 31/12/2026" /></div>
+      <div class="campo"><label>Link da loja</label><input id="f_link" placeholder="https://..." /></div>
+    </div>
+
+    <div class="campo"><label class="switch"><input type="checkbox" id="f_ativo" checked /> Oferta ativa</label></div>
+
+    <div class="linha" style="margin-top:6px">
+      <button class="btn btn-escuro" id="btnCancelar">Cancelar</button>
+      <button class="btn btn-sucesso" id="btnSalvar">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  var API = '/ofertas';
+  var CHAVE_KEY = 'aquariapp:admin-key';
+  var chave = localStorage.getItem(CHAVE_KEY) || '';
+  var tipoAtual = 'produto';
+  var editandoId = null;
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  function mostrarAviso(msg, ok) {
+    var a = $('aviso');
+    if (!msg) { a.style.display = 'none'; return; }
+    a.textContent = msg;
+    a.style.borderColor = ok ? '#38b000' : '#fb8c00';
+    a.style.color = ok ? '#38b000' : '#fb8c00';
+    a.style.display = 'block';
+  }
+
+  function cabecalho() {
+    var h = { 'Content-Type': 'application/json' };
+    if (chave) h['X-Admin-Key'] = chave;
+    return h;
+  }
+
+  var logado = false;
+
+  async function tentarLoginAutomatico() {
+    try {
+      var r = await fetch('/admin/status', { method: 'GET', credentials: 'same-origin' });
+      if (r.ok) { logado = true; return true; }
+    } catch (e) {}
+    return false;
+  }
+
+  async function loginComChave() {
+    var k = $('chave').value.trim();
+    if (!k) return;
+    try {
+      var r = await fetch('/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ chave: k }),
+      });
+      if (r.ok) {
+        chave = k;
+        localStorage.setItem(CHAVE_KEY, chave);
+        logado = true;
+        mostrarAviso('');
+        carregar();
+      } else {
+        mostrarAviso('Chave inválida.');
+      }
+    } catch (e) {
+      mostrarAviso('Erro ao entrar: ' + e.message);
+    }
+  }
+
+  async function sair() {
+    try { await fetch('/admin/logout', { method: 'POST', credentials: 'same-origin' }); } catch (e) {}
+    logado = false;
+    $('lista').innerHTML = '<div class="vazio">Digite a chave de administração para continuar.</div>';
+  }
+
+  async function iniciar() {
+    var ok = await tentarLoginAutomatico();
+    if (ok) {
+      mostrarAviso('');
+      carregar();
+    } else {
+      $('lista').innerHTML = '<div class="vazio">Digite a chave de administração para continuar.</div>';
+    }
+  }
+
+  function limparNumerico(v) {
+    var n = parseFloat(String(v || '').replace(',', '.'));
+    return isNaN(n) ? null : n;
+  }
+
+  function montarOferta() {
+    return {
+      tipo: tipoAtual,
+      icone: $('f_icone').value.trim() || (tipoAtual === 'cupom' ? '🎟️' : '🏷️'),
+      titulo: $('f_titulo').value.trim(),
+      lojista: $('f_lojista').value.trim(),
+      descricao: $('f_descricao').value.trim(),
+      precoOriginal: tipoAtual === 'produto' ? limparNumerico($('f_precoOrig').value) : null,
+      precoPromo: tipoAtual === 'produto' ? limparNumerico($('f_precoPromo').value) : null,
+      codigoCupom: tipoAtual === 'cupom' ? $('f_codigo').value.trim() : null,
+      descontoCupom: tipoAtual === 'cupom' ? $('f_desconto').value.trim() : null,
+      validade: $('f_validade').value.trim(),
+      link: $('f_link').value.trim(),
+      ativo: $('f_ativo').checked,
+    };
+  }
+
+  function preencherForm(o) {
+    tipoAtual = o.tipo || 'produto';
+    $('f_icone').value = o.icone || '';
+    $('f_titulo').value = o.titulo || '';
+    $('f_lojista').value = o.lojista || '';
+    $('f_descricao').value = o.descricao || '';
+    $('f_precoOrig').value = o.precoOriginal != null ? o.precoOriginal : '';
+    $('f_precoPromo').value = o.precoPromo != null ? o.precoPromo : '';
+    $('f_codigo').value = o.codigoCupom || '';
+    $('f_desconto').value = o.descontoCupom || '';
+    $('f_validade').value = o.validade || '';
+    $('f_link').value = o.link || '';
+    $('f_ativo').checked = o.ativo !== false;
+    atualizarTipo();
+  }
+
+  function atualizarTipo() {
+    var produto = tipoAtual === 'produto';
+    $('btnTipoProduto').className = produto ? 'ativa' : '';
+    $('btnTipoCupom').className = produto ? '' : 'ativa';
+    $('camposProduto').style.display = produto ? '' : 'none';
+    $('camposCupom').style.display = produto ? 'none' : '';
+  }
+
+  function abrirModal(oferta) {
+    editandoId = oferta ? oferta.id : null;
+    $('modalTitulo').textContent = oferta ? 'Editar oferta' : 'Nova oferta';
+    if (oferta) preencherForm(oferta); else { preencherForm({ tipo: 'produto', ativo: true }); }
+    $('modalBg').style.display = 'flex';
+  }
+
+  function fecharModal() {
+    $('modalBg').style.display = 'none';
+    editandoId = null;
+  }
+
+  function formatarMoeda(v) {
+    if (v == null || isNaN(v)) return '';
+    return 'R$ ' + v.toFixed(2).replace('.', ',');
+  }
+
+  function descontoPct(orig, promo) {
+    if (!orig || !promo || orig <= 0) return null;
+    return Math.round((1 - promo / orig) * 100);
+  }
+
+  function cardOferta(o) {
+    var etiquetas = [];
+    if (o.tipo === 'produto') {
+      etiquetas.push('<span class="tag accent">Produto</span>');
+      var pct = descontoPct(o.precoOriginal, o.precoPromo);
+      if (pct != null && pct > 0) etiquetas.push('<span class="tag ok">-' + pct + '%</span>');
+    } else {
+      etiquetas.push('<span class="tag warn">Cupom</span>');
+      if (o.codigoCupom) etiquetas.push('<span class="cupom-codigo">' + o.codigoCupom + '</span>');
+      if (o.descontoCupom) etiquetas.push('<span class="tag">' + o.descontoCupom + '</span>');
+    }
+    if (o.validade) etiquetas.push('<span class="tag">Válido até ' + o.validade + '</span>');
+    if (o.ativo === false) etiquetas.push('<span class="tag">Desativada</span>');
+
+    var precos = '';
+    if (o.tipo === 'produto' && o.precoPromo != null) {
+      precos = '<div><span class="preco-promo">' + formatarMoeda(o.precoPromo) + '</span>' +
+        (o.precoOriginal != null ? '<span class="preco-orig">' + formatarMoeda(o.precoOriginal) + '</span>' : '') + '</div>';
+    }
+
+    return '<div class="card' + (o.ativo === false ? ' inativo' : '') + '">' +
+      '<div class="topo-card"><div style="flex:1">' +
+        '<p class="oferta-titulo">' + (o.icone ? o.icone + ' ' : '') + esc(o.titulo) + '</p>' +
+        '<p class="oferta-loja">' + esc(o.lojista) + '</p>' +
+      '</div>' + precos + '</div>' +
+      '<div class="etiquetas">' + etiquetas.join('') + '</div>' +
+      (o.descricao ? '<p class="oferta-desc">' + esc(o.descricao) + '</p>' : '') +
+      (o.link ? '<p class="oferta-desc"><a href="' + esc(o.link) + '" target="_blank" rel="noopener" style="color:#7ce5ef">Ver oferta na loja →</a></p>' : '') +
+      '<div class="acoes">' +
+        '<button class="btn btn-escuro btn-pequeno" onclick="editarOferta(\'' + o.id + '\')">✏️ Editar</button>' +
+        '<button class="btn ' + (o.ativo === false ? 'btn-sucesso' : 'btn-escuro') + ' btn-pequeno" onclick="alternarAtiva(\'' + o.id + '\',' + (o.ativo !== false) + ')">' + (o.ativo === false ? 'Ativar' : 'Desativar') + '</button>' +
+        '<button class="btn btn-perigo btn-pequeno" onclick="excluirOferta(\'' + o.id + '\')">🗑️ Excluir</button>' +
+      '</div>' +
+    '</div>';
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function renderizar(ofertas) {
+    var produtos = ofertas.filter(function (o) { return o.tipo === 'produto'; });
+    var cupons = ofertas.filter(function (o) { return o.tipo === 'cupom'; });
+    var ativos = ofertas.filter(function (o) { return o.ativo !== false; });
+    $('stTotal').textContent = ofertas.length;
+    $('stProdutos').textContent = produtos.length;
+    $('stCupons').textContent = cupons.length;
+    $('stAtivos').textContent = ativos.length;
+    $('lista').innerHTML = ofertas.length
+      ? ofertas.map(cardOferta).join('')
+      : '<div class="vazio">Nenhuma oferta cadastrada ainda.<br/>Clique em "+ Nova oferta / cupom".</div>';
+  }
+
+  async function carregar() {
+    try {
+      var res = await fetch(API + '/todas', { headers: cabecalho(), credentials: 'same-origin' });
+      if (res.status === 401) {
+        logado = false;
+        $('lista').innerHTML = '<div class="vazio">Digite a chave de administração para continuar.</div>';
+        return;
+      }
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      var ofertas = await res.json();
+      mostrarAviso('');
+      renderizar(ofertas);
+    } catch (e) {
+      mostrarAviso('Erro ao carregar: ' + e.message);
+    }
+  }
+
+  async function salvarOferta() {
+    var oferta = montarOferta();
+    if (!oferta.titulo || !oferta.lojista) { mostrarAviso('Preencha título e lojista.'); return; }
+    try {
+      var res;
+      if (editandoId) {
+        res = await fetch(API + '/' + editandoId, { method: 'PUT', headers: cabecalho(), credentials: 'same-origin', body: JSON.stringify(oferta) });
+      } else {
+        res = await fetch(API, { method: 'POST', headers: cabecalho(), credentials: 'same-origin', body: JSON.stringify(oferta) });
+      }
+      if (!res.ok) {
+        var corpo = await res.json().catch(function () { return {}; });
+        mostrarAviso(corpo.erro || 'Erro ao salvar.');
+        return;
+      }
+      fecharModal();
+      carregar();
+    } catch (e) {
+      mostrarAviso('Erro ao salvar: ' + e.message);
+    }
+  }
+
+  window.editarOferta = function (id) {
+    if (!logado) return;
+    fetch(API + '/todas', { headers: cabecalho(), credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (ofertas) {
+      var o = ofertas.find(function (x) { return x.id === id; });
+      if (o) abrirModal(o);
+    });
+  };
+
+  window.alternarAtiva = async function (id, atual) {
+    try {
+      await fetch(API + '/' + id, { method: 'PUT', headers: cabecalho(), credentials: 'same-origin', body: JSON.stringify({ ativo: !atual }) });
+      carregar();
+    } catch (e) { mostrarAviso('Erro ao alternar: ' + e.message); }
+  };
+
+  window.excluirOferta = async function (id) {
+    if (!confirm('Excluir esta oferta?')) return;
+    try {
+      await fetch(API + '/' + id, { method: 'DELETE', headers: cabecalho(), credentials: 'same-origin' });
+      carregar();
+    } catch (e) { mostrarAviso('Erro ao excluir: ' + e.message); }
+  };
+
+  $('btnSalvarChave').addEventListener('click', loginComChave);
+  $('btnSair').addEventListener('click', sair);
+  $('btnNova').addEventListener('click', function () {
+    if (!logado) { mostrarAviso('Digite a chave primeiro.'); return; }
+    abrirModal(null);
+  });
+  $('btnRecarregar').addEventListener('click', carregar);
+  $('btnSalvar').addEventListener('click', salvarOferta);
+  $('btnCancelar').addEventListener('click', fecharModal);
+  $('btnTipoProduto').addEventListener('click', function () { tipoAtual = 'produto'; atualizarTipo(); });
+  $('btnTipoCupom').addEventListener('click', function () { tipoAtual = 'cupom'; atualizarTipo(); });
+  $('modalBg').addEventListener('click', function (e) { if (e.target === $('modalBg')) fecharModal(); });
+
+  $('chave').value = chave;
+  iniciar();
+</script>
+</body>
+</html>

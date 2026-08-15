@@ -1522,6 +1522,32 @@ app.post('/sugestao-aquario', async (req, res) => {
     australiana:
       'Australiana/Papua Nova Guiné: água neutra a levemente alcalina, vegetação esparsa, boa iluminação. ' +
       'Fauna típica: peixes-arco-íris (rainbowfish).',
+    primitiva:
+      'Peixes primitivos (fósseis vivos): espécies que preservam características morfológicas de milhões de anos, ' +
+      'como escamas ganoides pesadas ou respiração aérea. Ex.: Polypterus (bichir), Aruanã (Osteoglossum bicirrhosum), ' +
+      'Peixe-Corda (Erpetoichthys calabaricus) e Lepisosteus (peixe-gator/gar). ' +
+      'São peixes de fundo ou superfície, muito resistentes, mas exigem aquários GRANDES (300 L+), totalmente TAMPADOS ' +
+      '(são saltadores/rastejadores natos), filtragem potente (Sump ou Canister superdimensionado — geram muita amônia) e ' +
+      'decoração segura (troncos lisos, areia fina, sem rochas pontiagudas).',
+    exotica:
+      'Peixes exóticos (formatos e comportamentos incomuns): espécies com anatomia fora do padrão. ' +
+      'Ex.: Peixe-Faca-Palhaço (Chitala ornata, nada para trás com a nadadeira anal), Datnoid/Peixe-Tigre (listras pretas, ' +
+      'boca retrátil agressiva), Peixe-Elefante (Gnathonemus petersii, com tromba elétrica, areia fina no fundo) e ' +
+      'Peixe-Borboleta Africano (Pantodon buchholzi, habita a superfície, pode ficar em ~100 L). ' +
+      'Exigem atenção ao tamanho adulto, tampas (saltadores) e substrato adequado.',
+    nanofauna:
+      'Nano aquário (5 a 40 L): ecossistema miniaturizado, fauna MINIMALISTA e de baixa carga orgânica. ' +
+      'Invertebrados: camarões ornamentais (Neocaridinas Red Cherry) e caramujos pequenos (Planorbis). ' +
+      'Peixes solitários: 1 Betta ou Peixe-Paraíso (acima de 20 L). Micro-cardumes (5-6): Tetras Neon, Rasboras Nano, ' +
+      'Guppys Endler ou limpa-vidros (a partir de 30 L). Flora de baixo porte: musgos (Java, Christmas), Anubias Nana, ' +
+      'Bucephalandras e plantas de carpete (Elenocharis). Destaque: estabilidade difícil (pouca diluição), evaporação rápida; ' +
+      'use equipamentos compactos e reposição com água deionizada/destilada.',
+    invertebrados:
+      'Invertebrados e outros animais exóticos: alternativa fora dos peixes tradicionais. ' +
+      'Ex.: Mini Arraia de Rio (Gastromyzon — peixe comedor de algas de corredeiras com formato achatado que imita arraia), ' +
+      'Camarão Sossego/Filtrador (Atya gabonensis — grande, azulado, sem garras, filtra partículas com leques nas patas) e ' +
+      'Ampulárias Gigantes (moluscos ativos, ajudam na limpeza e "escalam" os vidros). ' +
+      'Oriente a fauna para invertebrados (camarões, caramujos, moluscos) e peixes pequenos e pacíficos compatíveis.',
   };
 
   const biotopoTexto = BIOTOPOS[tipoFauna]

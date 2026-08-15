@@ -18,14 +18,14 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_MODEL
-        value: gemini-2.5-flash
+        value: gemini-3.5-flash
       - key: PLANTNET_API_KEY
         sync: false
       - key: ADMIN_KEY
         sync: false
       # URL pública do front (ex.: https://aquariapp.netlify.app)
       - key: ALLOWED_ORIGINS
-        value: https://serene-selkie-310f60.netlify.app
+        value: https://serene-selkie-310f60.netlify.app,https://tranquil-sable-8b2aa1.netlify.app
       # URL pública deste backend (ex.: https://aquariapp-ia.onrender.com)
       - key: PUBLIC_BASE_URL
         value: https://aquariapp-ia.onrender.com

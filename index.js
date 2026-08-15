@@ -21,6 +21,7 @@ const whatsappApi = require('./whatsappApi');
 const concursosStore = require('./concursosStore');
 const telemetriaStore = require('./telemetriaStore');
 const testerStore = require('./testerStore');
+const trialStore = require('./trialStore');
 
 const ADMIN_KEY = process.env.ADMIN_KEY || (process.env.NODE_ENV === 'production' ? '' : 'admin123');
 if (!ADMIN_KEY) {
@@ -218,6 +219,8 @@ const rotasIA = [
   '/sugestao-aquario',
   '/avaliacao-aquario',
   '/cronograma-alimentar',
+  '/alimentos-recomendados',
+  '/sugestoes-ajuste',
   '/pergunta',
 ];
 rotasIA.forEach((rota) => app.use(rota, limiterIA));
@@ -573,7 +576,7 @@ async function viaOpenAI(imagem) {
 }
 
 async function viaGemini(base64, mime, textoExtra, sistemaPrompt) {
-  const modelo = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const modelo = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
   const system = sistemaPrompt || PROMPT_SISTEMA;
   const parts = [];
   if (base64) {
@@ -622,7 +625,7 @@ async function viaGemini(base64, mime, textoExtra, sistemaPrompt) {
 }
 
 async function validarFotoGemini(base64, mime, prompt) {
-  const modelo = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const modelo = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
     {
@@ -1294,7 +1297,7 @@ app.post('/compatibilidade', async (req, res) => {
 
   if (process.env.GEMINI_API_KEY) {
     try {
-      const modelo = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+      const modelo = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
       const resIA = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
         {
@@ -1412,7 +1415,7 @@ app.post('/sugestoes', async (req, res) => {
 
   if (process.env.GEMINI_API_KEY) {
     try {
-      const modelo = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+      const modelo = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
       const resIA = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
         {
@@ -1960,7 +1963,7 @@ async function diagnosticarComIA(imagem, estoqueMedicamentos, descricao, faunaSe
       if (base64) parts.push({ inline_data: { mime_type: prefixo, data: base64 } });
       parts.push({ text: userText });
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_MODEL || 'gemini-2.5-flash'}:generateContent`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_MODEL || 'gemini-3.5-flash'}:generateContent`,
         {
           method: 'POST',
           signal: AbortSignal.timeout(AI_TIMEOUT_MS),
@@ -2050,7 +2053,7 @@ async function viaIAVision({ imagem, systemPrompt, userText }) {
 
   if (process.env.GEMINI_API_KEY) {
     try {
-      const modelo = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+      const modelo = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
       const parts = [];
       if (base64 && prefixo) parts.push({ inline_data: { mime_type: prefixo, data: base64 } });
       parts.push({ text: userText });
@@ -2162,7 +2165,7 @@ async function gerarCronogramaComIA(pergunta) {
 
   if (process.env.GEMINI_API_KEY) {
     try {
-      const modelo = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+      const modelo = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
       const resIA = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
         {
@@ -2940,8 +2943,8 @@ app.post('/pergunta', async (req, res) => {
   if (texto.length < 4) {
     return res.status(400).json({ erro: 'Escreva uma pergunta (mínimo 4 caracteres).' });
   }
-  if (texto.length > 200) {
-    return res.status(400).json({ erro: 'A pergunta deve ter no máximo 200 caracteres.' });
+  if (texto.length > 1000) {
+    return res.status(400).json({ erro: 'A pergunta deve ter no máximo 1000 caracteres.' });
   }
 
   try {
@@ -2999,6 +3002,161 @@ app.get('/admin-catalogos', (req, res) => {
 
 app.get('/admin-ofertas', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin', 'ofertas.html'));
+});
+
+// ============================ TESTER (limite de testadores) ============================
+// O app consulta esta rota no boot (ambiente tester) para validar o acesso:
+//  - acesso ILIMITADO (quem recebeu o link entra; não há limite de vagas);
+//  - expira em testerStore.EXPIRA_EM (30/09/2026) mesmo que esqueçam de tirar o link do ar.
+
+// ============================ ALIMENTOS RECOMENDADOS ============================
+// Recomenda alimentos da fauna cadastrada, usando IA com fallback local.
+const PROMPT_ALIMENTOS_RECOMENDADOS =
+  'Você é um especialista em rações e alimentos para peixes ornamentais e aquários de água doce. ' +
+  'O usuário informou a fauna do aquário. Recomende até 4 produtos de alimentação adequados para essa fauna. ' +
+  'Responda APENAS com JSON válido no formato: ' +
+  '{"recomendacoes":[{"marca":"marca do produto","nome":"nome comercial","tipo":"formato (flocos, grânulos, pellets, etc.)",' +
+  '"indicacao":"para quais peixes/espécies o produto é indicado","motivo":"motivo curto e específico da recomendação"}]}. ' +
+  'Se a fauna estiver vazia, responda {"recomendacoes":[]}. Não invente produtos inexistentes.';
+
+function recomendacoesAlimentosLocais(fauna) {
+  const produtos = catalogosStore.listar('produtos');
+  const alimentos = (produtos || []).filter((p) => (p.categoria || '') === 'alimentos');
+  const dietas = String(
+    (fauna || [])
+      .map((f) => `${f.dieta || ''} ${f.nomeComum || f.nome || ''}`.trim())
+      .filter(Boolean)
+      .join(' ')
+  )
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (!alimentos.length) return [];
+  const vistos = new Set();
+  const recomendacoes = alimentos
+    .map((p) => {
+      const alvo = `${p.nome || ''} ${p.marca || ''} ${p.tipo || ''} ${p.indicacao || ''} ${(p.palavrasChave || []).join(' ')}`
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      let score = 0;
+      for (const token of dietas.split(/\s+/).filter((t) => t.length >= 4)) {
+        if (alvo.includes(token)) score += 1;
+      }
+      if (dietas.includes('carnivor') && alvo.includes('carnivor')) score += 3;
+      if (dietas.includes('herbivor') && (alvo.includes('herbivor') || alvo.includes('espirulina'))) score += 3;
+      if (dietas.includes('onivor') && alvo.includes('comunitario')) score += 2;
+      return { p, score };
+    })
+    .filter((r) => r.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .map((r) => r.p);
+  for (const p of recomendacoes) {
+    const chave = `${p.marca || ''}-${p.nome || ''}`.toLowerCase();
+    if (vistos.has(chave)) continue;
+    vistos.add(chave);
+  }
+  const unicas = recomendacoes.filter((p) => {
+    const chave = `${p.marca || ''}-${p.nome || ''}`.toLowerCase();
+    if (vistos.has(chave)) return false;
+    vistos.add(chave);
+    return true;
+  });
+  return unicas.slice(0, 4).map((p) => ({
+    marca: p.marca || '',
+    nome: p.nome || '',
+    tipo: p.tipo || '',
+    indicacao: p.indicacao || '',
+    motivo: p.indicacao ? `Adequado para a dieta da fauna: ${p.indicacao}.` : 'Alimento de rotina adequado para peixes de aquário comunitário.',
+  }));
+}
+
+app.post('/alimentos-recomendados', async (req, res) => {
+  const { fauna } = req.body || {};
+  try {
+    const lista = (fauna || []).map((f) => `${f.nomeComum || f.nome || 'peixe'} (${f.dieta || 'dieta não informada'})`).join(', ');
+    const userText = lista
+      ? `Fauna do aquário: ${lista}. Recomende alimentos adequados.`
+      : 'A fauna está vazia. Recomende alimentos de rotina para aquário comunitário.';
+    const dados = await viaIAVision({
+      imagem: null,
+      systemPrompt: PROMPT_ALIMENTOS_RECOMENDADOS,
+      userText,
+    });
+    if (dados && Array.isArray(dados.recomendacoes)) {
+      return res.json({
+        recomendacoes: dados.recomendacoes.slice(0, 6),
+        provedor: dados.provedor || 'IA',
+      });
+    }
+  } catch (e) {
+    console.error('Falha ao recomendar alimentos (IA):', e.message);
+  }
+  const recomendacoes = recomendacoesAlimentosLocais(fauna);
+  return res.json({ recomendacoes, provedor: 'local', offline: true });
+});
+
+// ============================ SUGESTÕES DE AJUSTE ============================
+// Sugestões de ajuste de parâmetros da água em alerta/perigo, com IA + fallback local.
+const PROMPT_SUGESTOES_AJUSTE =
+  'Você é um consultor de aquarismo de água doce. O usuário está com parâmetros da água em alerta ou perigo ' +
+  'e precisa de sugestões práticas de ajuste. Analise os parâmetros e a situação e responda APENAS com JSON válido: ' +
+  '{"resposta":"sugestões claras e práticas em português, com passos de correção, em até 6 frases"}. ' +
+  'Priorize medidas seguras: TPAs parciais, ajustes graduais (máx. 1-2 °C/dia), condicionadores, redução de ração, ' +
+  'verificação do filtro biológico, etc. Se os parâmetros informados estiverem todos OK, sugira apenas manter a rotina.';
+
+app.post('/sugestoes-ajuste', async (req, res) => {
+  const corpo = req.body || {};
+  try {
+    const texto = JSON.stringify(corpo);
+    const userText = `Parâmetros/situação do aquário: ${texto}. Sugira ajustes.`;
+    const dados = await viaIAVision({
+      imagem: null,
+      systemPrompt: PROMPT_SUGESTOES_AJUSTE,
+      userText,
+    });
+    if (dados && typeof dados.resposta === 'string' && dados.resposta.trim()) {
+      return res.json({ resposta: String(dados.resposta) });
+    }
+  } catch (e) {
+    console.error('Falha ao gerar sugestões de ajuste (IA):', e.message);
+  }
+  const alertas = (corpo.alertas || []).map((a) => String(a.campo || a.titulo || '').toLowerCase());
+  const resumo = String(corpo.resumo || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const tem = (palavra) => alertas.includes(palavra) || resumo.includes(palavra);
+  const linhas = [];
+  if (tem('temperatura')) linhas.push('Temperatura fora da faixa: ajuste o aquecedor (~1W por litro) e mude a temperatura aos poucos (máx. 1-2 °C por dia).');
+  if (tem('ph')) linhas.push('pH fora do ideal: evite variações bruscas. Troncos e folhas baixam o pH; rochas calcárias elevam. Ajuste aos poucos.');
+  if (tem('amonia') || tem('amônia')) linhas.push('Amônia acima de 0: faça TPA de 20-30%, reduza a alimentação, use condicionador e confira o filtro biológico.');
+  if (tem('nitrito')) linhas.push('Nitrito alto: ciclo incompleto. Reduza a ração, faça TPAs e adicione bactérias benéficas.');
+  if (tem('nitrato')) linhas.push('Nitrato alto: TPAs regulares, menos ração e plantas ajudam a consumir o excesso.');
+  if (tem('kh') || tem('dureza em carbonatos')) linhas.push('KH fora da faixa: use tampão de KH próprio e ajuste aos poucos para não estressar os peixes.');
+  if (tem('gh') || tem('dureza geral')) linhas.push('GH fora da faixa: eleve com sais próprios ou reduza com água de osmose, sempre gradualmente.');
+  if (linhas.length === 0) linhas.push('Revise as medições e repita o teste em 24-48h. Mantenha TPAs regulares e alimentação moderada.');
+  return res.json({
+    resposta: `Sugestões rápidas para ajustar a água:\n\n${linhas.map((l) => `• ${l}`).join('\n')}\n\nMeça novamente em 24-48h para acompanhar a melhora.`,
+    _offline: true,
+  });
+});
+
+// ============================ TRIAL (teste freemium) ============================
+// Guarda anti-reinstalação do teste freemium: reserva o teste por dispositivo.
+app.post('/trial', (req, res) => {
+  const { dispositivoId } = req.body || {};
+  const r = trialStore.reservar(dispositivoId);
+  res.json(r);
+});
+
+app.get('/trial/todas', (req, res) => {
+  if (!exigirAdmin(req, res)) return;
+  res.json(trialStore.listar());
+});
+
+app.delete('/trial/:dispositivoId', (req, res) => {
+  if (!exigirAdmin(req, res)) return;
+  const removido = trialStore.remover(req.params.dispositivoId);
+  if (!removido) return res.status(404).json({ erro: 'Dispositivo não encontrado.' });
+  res.json({ ok: true });
 });
 
 // ============================ TESTER (limite de testadores) ============================

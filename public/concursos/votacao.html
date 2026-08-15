@@ -24,17 +24,19 @@
   }
   .premio { color: #FFC857; font-weight: 800; font-size: 15px; margin: 6px 0; }
   .periodo { color: #8EA4C0; font-size: 12px; margin: 2px 0; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
   .card {
     background: rgba(10, 28, 53, 0.62);
     border: 1px solid rgba(0, 184, 217, 0.3);
     border-radius: 12px;
     overflow: hidden;
   }
-  .card img { width: 100%; height: 180px; object-fit: cover; display: block; }
+  .card img { width: 100%; height: 220px; object-fit: cover; display: block; }
   .card-body { padding: 10px; }
-  .card-name { font-weight: 800; font-size: 14px; margin: 0; }
+  .card-name { font-weight: 800; font-size: 15px; margin: 0; }
+  .card-apelido { color: #FFC857; font-size: 12px; margin: 1px 0; }
   .card-votos { color: #8EA4C0; font-size: 12px; margin: 2px 0 8px; }
+  .regra { color: #B9C7DA; font-size: 12px; line-height: 1.5; margin-top: 10px; }
   button {
     width: 100%;
     background: #00B8D9;
@@ -49,6 +51,19 @@
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   .msg {
     text-align: center; padding: 20px; color: #8EA4C0;
+  }
+  .share {
+    display: flex; justify-content: center; gap: 10px; margin-top: 12px; flex-wrap: wrap;
+  }
+  .btn-share {
+    background: #25D366; color: #fff; border: none; border-radius: 999px;
+    padding: 12px 20px; font-weight: 900; font-size: 14px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .btn-link {
+    background: #00B8D9; color: #001020; border: none; border-radius: 999px;
+    padding: 12px 20px; font-weight: 900; font-size: 14px; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 8px;
   }
   .ok { color: #39D98A; font-weight: 800; text-align: center; margin-top: 12px; }
   .erro { color: #FF5C6C; font-weight: 700; text-align: center; margin-top: 12px; }
@@ -98,20 +113,28 @@
     box += '<div class="box">';
     box += '<h1>' + (cfg.categoria || 'Concurso de Aquários') + '</h1>';
     if (cfg.premio) box += '<div class="premio">🎁 Prêmio: ' + cfg.premio + '</div>';
+    if (cfg.patrocinador) box += '<div class="periodo">🤝 Patrocinador: ' + cfg.patrocinador + '</div>';
+    if (cfg.url) box += '<div class="periodo">🔗 <a href="' + cfg.url + '" target="_blank" rel="noopener" style="color:#00B8D9;">' + cfg.url + '</a></div>';
     box += '<div class="periodo">📅 Inscrições: ' + fmt(cfg.inscricaoDe) + ' até ' + fmt(cfg.inscricaoAte) + '</div>';
     box += '<div class="periodo">🗳️ Votação: ' + fmt(cfg.votacaoDe) + ' até ' + fmt(cfg.votacaoAte) + '</div>';
+    if (cfg.regra) box += '<div class="regra">📋 Regra: ' + cfg.regra + '</div>';
     box += '</div>';
     el('estado').innerHTML = box;
 
     var conteudo = '';
     if (dados.fase === 'votacao') {
+      conteudo += '<div class="share">';
+      conteudo += '<button class="btn-share" onclick="compartilharWhatsApp()">WhatsApp</button>';
+      conteudo += '<button class="btn-link" onclick="copiarLink()">Copiar link</button>';
+      conteudo += '</div>';
       if (dados.inscricoes && dados.inscricoes.length > 0) {
         conteudo += '<div class="grid">';
         dados.inscricoes.forEach(function (i) {
           conteudo += '<div class="card">';
           if (i.foto) conteudo += '<img src="' + i.foto + '" alt="Foto do participante" />';
           conteudo += '<div class="card-body">';
-          conteudo += '<p class="card-name">' + (i.apelido || i.nome || 'Participante') + '</p>';
+          conteudo += '<p class="card-name">' + (i.nome || 'Participante') + '</p>';
+          if (i.apelido && i.apelido !== i.nome) conteudo += '<p class="card-apelido">@' + i.apelido + '</p>';
           conteudo += '<p class="card-votos">' + (i.votos || 0) + ' votos</p>';
           conteudo += '<button data-insc="' + i.id + '" ' + (jaVotou ? 'disabled' : '') + '>Votar</button>';
           conteudo += '</div></div>';
@@ -126,7 +149,7 @@
         conteudo += '<div class="box" style="border-color:#FFC857;text-align:center;">';
         conteudo += '<div style="font-weight:900;color:#FFC857;">🏆 VENCEDOR</div>';
         if (dados.ganhador.foto) conteudo += '<img src="' + dados.ganhador.foto + '" style="width:100%;max-width:360px;border-radius:12px;margin:10px 0;" />';
-        conteudo += '<div style="font-size:20px;font-weight:900;">' + (dados.ganhador.apelido || dados.ganhador.nome) + '</div>';
+        conteudo += '<div style="font-size:20px;font-weight:900;">' + (dados.ganhador.nome || dados.ganhador.apelido) + '</div>';
         conteudo += '<div style="color:#8EA4C0;">' + (dados.ganhador.votos || 0) + ' votos</div>';
         if (dados.ganhador.premio) conteudo += '<div style="color:#FFC857;font-weight:800;margin-top:6px;">🎁 ' + dados.ganhador.premio + '</div>';
         conteudo += '</div>';
@@ -182,6 +205,21 @@
       });
   }
 
+  window.compartilharWhatsApp = function () {
+    var link = window.location.href;
+    var msg = 'Participe da votação do concurso de aquários! Vote no melhor aquário:\n' + link;
+    window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
+  };
+  window.copiarLink = function () {
+    var link = window.location.href;
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(link).then(function () {
+        el('conteudo').insertAdjacentHTML('beforeend', '<div class="ok">Link copiado!</div>');
+      });
+    } else {
+      el('conteudo').insertAdjacentHTML('beforeend', '<div class="ok">Link: ' + link + '</div>');
+    }
+  };
   carregar();
 })();
 </script>

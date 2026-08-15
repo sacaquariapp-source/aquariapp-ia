@@ -44,7 +44,30 @@ function obterInscricao(id) {
   return listarInscricoes().find((i) => i.id === id) || null;
 }
 
-// Inscrição imutável: após criada, não há edição nem exclusão.
+function atualizarInscricao(id, mudancas) {
+  const inscricoes = listarInscricoes();
+  const idx = inscricoes.findIndex((i) => i.id === id);
+  if (idx === -1) return null;
+  inscricoes[idx] = { ...inscricoes[idx], ...mudancas };
+  const store = ler();
+  store.inscricoes = inscricoes;
+  salvar(store);
+  return inscricoes[idx];
+}
+
+function removerInscricao(id) {
+  const inscricoes = listarInscricoes();
+  const nova = inscricoes.filter((i) => i.id !== id);
+  if (nova.length === inscricoes.length) return false;
+  const store = ler();
+  store.inscricoes = nova;
+  salvar(store);
+  return true;
+}
+
+// Inscrição: status inicial 'pendente' (aguarda aprovação do admin). A foto é
+// imutável; apenas o status pode mudar (aprovado / rejeitado) ou o item pode
+// ser removido pelo admin.
 function criarInscricao(dados) {
   const inscricoes = listarInscricoes();
   const inscricao = {
@@ -52,6 +75,7 @@ function criarInscricao(dados) {
     criadoEm: Date.now(),
     votos: 0,
     votantes: [],
+    status: 'pendente',
     ...dados,
   };
   inscricoes.push(inscricao);
@@ -61,12 +85,22 @@ function criarInscricao(dados) {
   return inscricao;
 }
 
+function statusDeDispositivo(dispositivoId) {
+  const norm = String(dispositivoId || '').trim();
+  if (!norm) return null;
+  const ins = listarInscricoes().find((i) => String(i.dispositivoId || '') === norm);
+  return ins ? { status: ins.status || 'pendente', inscricaoId: ins.id } : null;
+}
+
 // --- Votação ---
 function registrarVoto(inscricaoId, dispositivoId) {
   const inscricoes = listarInscricoes();
   const idx = inscricoes.findIndex((i) => i.id === inscricaoId);
   if (idx === -1) return { ok: false, motivo: 'Inscrição não encontrada.' };
   const inscricao = inscricoes[idx];
+  if (inscricao.status !== 'aprovado') {
+    return { ok: false, motivo: 'Esta inscrição não está autorizada para votação.' };
+  }
   const votantes = Array.isArray(inscricao.votantes) ? inscricao.votantes : [];
   const norm = String(dispositivoId || '').trim();
   if (!norm) return { ok: false, motivo: 'Dispositivo inválido.' };
@@ -85,6 +119,7 @@ function definirGanhador(inscricaoId) {
   const inscricoes = listarInscricoes();
   const idx = inscricoes.findIndex((i) => i.id === inscricaoId);
   if (idx === -1) return null;
+  if (inscricoes[idx].status !== 'aprovado') return null;
   const store = ler();
   store.ganhador = { inscricaoId, declaradoEm: Date.now() };
   salvar(store);
@@ -104,7 +139,10 @@ module.exports = {
   salvarConfig,
   listarInscricoes,
   obterInscricao,
+  atualizarInscricao,
+  removerInscricao,
   criarInscricao,
+  statusDeDispositivo,
   registrarVoto,
   definirGanhador,
   obterGanhador,

@@ -282,6 +282,16 @@ const PROMPT_VALIDACAO_AQUARIO =
   'animais ou insetos TERRESTRES, plantas terrestres, comidas, paisagens de terra, mar ou água salgada. ' +
   'Se tiver dúvida, responda valida false.';
 
+const PROMPT_VALIDACAO_CONCURSO =
+  'Você é o verificador de fotos de um CONCURSO de aquários de água doce. Analise a imagem e responda ' +
+  'APENAS com JSON válido no formato {"valida": true} ou {"valida": false, "motivo": "explicação curta em português"}. ' +
+  'A foto é VÁLIDA somente se mostrar o AQUÁRIO INTEIRO em cena — o tanque completo com água, vidro e ambiente ' +
+  '(decoração, substrato, plantas e/ou peixes). ' +
+  'A foto é INVÁLIDA se: (1) mostrar apenas um peixe ou animal de perto sem o aquário; (2) não houver cena de aquário ' +
+  'de água doce; (3) mostrar pessoas, pets, insetos terrestres, plantas terrestres, comidas, mar ou água salgada; ' +
+  '(4) a imagem for borrada, escura demais ou recortada sem contexto do aquário. ' +
+  'Se tiver dúvida, responda valida false.';
+
 const PROMPT_COMPATIBILIDADE =
   'Você é um especialista em aquarismo de água doce. Avalie se um novo peixe pode ser introduzido com segurança em um aquário. ' +
   'Cruzando: (1) a compatibilidade do novo peixe com CADA peixe já existente no aquário (agressividade, territorialidade, ' +
@@ -304,16 +314,26 @@ const PROMPT_SUGESTOES =
 
 const PROMPT_SUGESTAO_AQUARIO =
   'Você é um especialista em aquarismo de água doce. O usuário está planejando um aquário NOVO e informou: ' +
-  '(1) o volume pretendido em litros e (2) o tipo de aquário (Comunitário, Jumbo, Espécie Única ou Hospital). ' +
-  'Com base nessas duas informações, monte uma sugestão completa e equilibrada. Regras OBRIGATÓRIAS: ' +
+  '(1) o volume pretendido em litros, (2) o tipo de aquário (Comunitário, Jumbo, Espécie Única ou Hospital) e ' +
+  '(3) opcionalmente o tipo de fauna/biótopo desejado (amazônica, água negra, americana, asiática, africana, ' +
+  'australiana ou sem preferência) — siga as características do biótopo quando informado. ' +
+  'Com base nessas informações, monte uma sugestão completa e equilibrada. Regras OBRIGATÓRIAS: ' +
   '(1) FAUNA: sugira espécies compatíveis entre si (sem predação, sem territorialidade severa, hábitos e dieta compatíveis) ' +
   'e em QUANTIDADE adequada ao volume (regra prática de até ~1 cm de peixe por litro para comunitário; menos para ' +
-  'espécies grandes, territoriais ou de água fria). Para "Jumbo" priorize peixes de grande porte; para "Espécie Única" ' +
-  'sugira apenas 1 espécie (ex.: um ciclídeo de porte médio) na quantidade adequada; para "Hospital" sugira pouca ' +
-  'fauna resistente (ex.: neon, rasbora) e sem decoração viva. ' +
+  'espécies grandes, territoriais ou de água fria). ' +
+  'Para "Jumbo" priorize peixes de grande porte e VERIFIQUE se o volume é suficiente (um "Jumbo" exige no mínimo ' +
+  '~200-300 L; se o volume informado for menor, avise no campo "agua.nota" que o volume é pequeno para Jumbo e sugira ' +
+  'espécies compatíveis com o tamanho real). ' +
+  'Para "Espécie Única" sugira APENAS espécies de UM mesmo grupo/padrão (ex.: só ciclídeos, ou só americanos, ou só ' +
+  'barbos, ou só bettas, ou só guppies) — pode ser várias espécies do MESMO tipo (ex.: vários ciclídeos africanos), mas ' +
+  'nada de misturar grupos diferentes. ' +
+  'Para "Hospital" sugira pouca fauna resistente e de fácil manutenção (ex.: neon, rasbora) pensada para peixes que ' +
+  'estarão em tratamento/cuidados: aquário simples, sem substrato vivo, fácil de limpar e de observar; pode haver ' +
+  'medicamentos básicos na lista de equipamentos. ' +
   '(2) FLORA: sugira plantas aquáticas compatíveis com o tipo e o tamanho do aquário (até 6 espécies), considerando ' +
-  'luz e se faz sentido para o tipo (para Hospital, sugira poucas ou nenhuma). ' +
-  '(3) ÁGUA: sugira a faixa de pH ideal para o conjunto (ex.: 6,5 - 7,2) e a temperatura. ' +
+  'luz e se faz sentido para o tipo (para Hospital, sugira poucas ou nenhuma; para Jumbo priorize plantas de porte ' +
+  'maior; para biótopo africano, quase nenhuma). ' +
+  '(3) ÁGUA: sugira a faixa de pH ideal para o conjunto (ex.: 6,5 - 7,2) e a temperatura, coerentes com o biótopo/tipo. ' +
   '(4) EQUIPAMENTOS: sugira equipamentos essenciais para o volume e o tipo (filtro e vazão L/h, aquecedor em watts ' +
   'quando fizer sentido, iluminação, bomba/oxigenação, substrato e, se for plantado, CO2 quando necessário). ' +
   'Responda APENAS com JSON válido no formato: ' +
@@ -1469,7 +1489,7 @@ app.post('/sugestoes', async (req, res) => {
 });
 
 app.post('/sugestao-aquario', async (req, res) => {
-  const { litros, tipo } = req.body || {};
+  const { litros, tipo, tipoFauna } = req.body || {};
   const volume = parseFloat(String(litros || '').replace(',', '.'));
   if (!volume || volume <= 0) {
     return res.status(400).json({ erro: 'Informe o volume pretendido em litros.' });
@@ -1477,11 +1497,43 @@ app.post('/sugestao-aquario', async (req, res) => {
   const tiposValidos = ['Comunitário', 'Jumbo', 'Espécie Única', 'Hospital'];
   const tipoAquario = tiposValidos.includes(tipo) ? tipo : 'Comunitário';
 
-  const pergunta =
-    `Volume pretendido: ${volume} L.\nTipo de aquário: ${tipoAquario}.\n` +
-    `Monte a sugestão completa de fauna, flora, água e equipamentos para este aquário novo.`;
+  // Biótopos de água doce: orientação para a IA escolher a fauna correta.
+  const BIOTOPOS = {
+    amazonica:
+      'Amazônico: água ácida e muito mole, temperatura quente, rica em troncos. ' +
+      'Fauna típica: discos, acarás-bandeira, neons, coridoras, cascudos. ' +
+      'Flora: Echinodorus (amazonenses) e Vallisneria.',
+    'agua-negra':
+      'Água negra (blackwater, afluentes do Rio Negro): água muito escura (cor de chá) por taninos de folhas e troncos, iluminação muito baixa. ' +
+      'Fauna típica: neons, tetras e ciclídeos anões (Apistogramma).',
+    americana:
+      'Americana (rios de correnteza e lagos da América Central): água alcalina e dura, decoração de rochas e poucos troncos. ' +
+      'Fauna típica: ciclídeos de médio e grande porte (Jack Dempsey, boca de fogo) e vivíparos (guppys, plati, molinésias).',
+    asiatica:
+      'Asiática (rios e pântanos do Sudeste Asiático): água levemente ácida a neutra, fluxo lento ou estagnado, vegetação abundante. ' +
+      'Fauna típica: bettas, gouramis, rasboras e danios. ' +
+      'Flora: Cryptocorynes, higrófilas e samambaias de Java. ' +
+      '(Há também a variação de correnteza/hillstream: água fria, muito oxigenada, correnteza forte; cobrinhas kuhli e peixes-ventosa.)',
+    africana:
+      'Africana (grandes lagos do Rift — Malawi, Tanganyika e Victoria): água muito alcalina e muito dura, decoração de rochas empilhadas, quase sem troncos. ' +
+      'Fauna típica: ciclídeos africanos coloridos e territoriais (mbunas do Malawi). ' +
+      'Flora: quase inexistente (apenas Anúbias resistentes). ' +
+      '(Rios do oeste africano: água ácida a neutra, troncos e vegetação; kribensis e peixes-elefante.)',
+    australiana:
+      'Australiana/Papua Nova Guiné: água neutra a levemente alcalina, vegetação esparsa, boa iluminação. ' +
+      'Fauna típica: peixes-arco-íris (rainbowfish).',
+  };
 
-  console.log(`[sugestao-aquario] litros=${volume} | tipo=${tipoAquario}`);
+  const biotopoTexto = BIOTOPOS[tipoFauna]
+    ? `\nTipo de fauna / biótopo: ${BIOTOPOS[tipoFauna]}`
+    : '';
+
+  const pergunta =
+    `Volume pretendido: ${volume} L.\nTipo de aquário: ${tipoAquario}.` +
+    biotopoTexto +
+    `\nMonte a sugestão completa de fauna, flora, água e equipamentos para este aquário novo.`;
+
+  console.log(`[sugestao-aquario] litros=${volume} | tipo=${tipoAquario} | fauna=${tipoFauna || 'sem'}`);
 
   try {
     const dados = await viaIAVision({
@@ -1492,6 +1544,7 @@ app.post('/sugestao-aquario', async (req, res) => {
     return res.json({
       litros: volume,
       tipo: tipoAquario,
+      tipoFauna: tipoFauna || 'sem',
       fauna: Array.isArray(dados.fauna) ? dados.fauna : [],
       flora: Array.isArray(dados.flora) ? dados.flora : [],
       agua: dados.agua || {},
@@ -2378,7 +2431,6 @@ const CONCURSOS_UPLOADS_DIR = path.join(__dirname, 'public', 'concursos');
 if (!fs.existsSync(CONCURSOS_UPLOADS_DIR)) {
   fs.mkdirSync(CONCURSOS_UPLOADS_DIR, { recursive: true });
 }
-
 // Estado público: se o admin não ativou, retorna null (a seção não aparece no app).
 app.get('/concursos', (req, res) => {
   const config = concursosStore.obterConfig();
@@ -2393,27 +2445,41 @@ app.get('/concursos', (req, res) => {
       ? 'votacao'
       : 'encerrado';
   const ganhador = fase === 'encerrado' ? concursosStore.obterGanhador() : null;
-  const inscricoes = concursosStore.listarInscricoes().map((i) => ({
-    id: i.id,
-    nome: i.nome || '',
-    apelido: i.apelido || '',
-    foto: i.foto || '',
-    votos: i.votos || 0,
-  }));
+  // Link de votação: usa o configurado ou gera automaticamente.
+  const linkBase = `${urlBasePublica(req).replace(/\/$/, '')}/concurso/votacao`;
+  const linkVotacao = String(config.linkVotacao || '').trim() || linkBase;
+  // Na votação só aparecem inscrições APROVADAS pelo admin.
+  const inscricoes = concursosStore
+    .listarInscricoes()
+    .filter((i) => i.status === 'aprovado')
+    .map((i) => ({
+      id: i.id,
+      nome: i.nome || '',
+      apelido: i.apelido || '',
+      foto: i.foto || '',
+      votos: i.votos || 0,
+    }));
+  // Status do dispositivo que está consultando (para o app mostrar "inscrito").
+  const dispositivoId = String((req.query && req.query.dispositivoId) || '').trim();
+  const meuStatus = dispositivoId ? concursosStore.statusDeDispositivo(dispositivoId) : null;
   res.json({
     ativo: true,
     config: {
       categoria: config.categoria || '',
+      regra: config.regra || '',
       premio: config.premio || '',
+      patrocinador: config.patrocinador || '',
+      url: config.url || '',
       inscricaoDe: config.inscricaoDe || 0,
       inscricaoAte: config.inscricaoAte || 0,
       votacaoDe: config.votacaoDe || 0,
       votacaoAte: config.votacaoAte || 0,
-      linkVotacao: config.linkVotacao || '',
+      linkVotacao,
       ganhadorDeclarado: !!config.ganhadorDeclarado,
     },
     fase,
     inscricoes,
+    meuStatus,
     ganhador: ganhador
       ? {
           inscricaoId: ganhador.inscricaoId,
@@ -2427,6 +2493,11 @@ app.get('/concursos', (req, res) => {
       : null,
   });
 });
+
+// Serve as fotos das inscrições (e a página de votação). Registrado depois
+// das rotas JSON para que GET /concursos (exato) caia na rota e os arquivos
+// /concursos/<arquivo> sejam servidos da pasta pública.
+app.use('/concursos', express.static(CONCURSOS_UPLOADS_DIR, { maxAge: '1d' }));
 
 // Config + inscrições completas (painel do admin).
 app.get('/concursos/admin', (req, res) => {
@@ -2444,7 +2515,10 @@ app.put('/concursos/config', (req, res) => {
   const config = {
     ativo: c.ativo !== false,
     categoria: String(c.categoria || '').trim(),
+    regra: String(c.regra || '').trim(),
     premio: String(c.premio || '').trim(),
+    patrocinador: String(c.patrocinador || '').trim(),
+    url: String(c.url || '').trim(),
     inscricaoDe: Number(c.inscricaoDe) || 0,
     inscricaoAte: Number(c.inscricaoAte) || 0,
     votacaoDe: Number(c.votacaoDe) || 0,
@@ -2456,8 +2530,9 @@ app.put('/concursos/config', (req, res) => {
   res.json({ ok: true, config });
 });
 
-// Envio de inscrição com foto. A foto é validada (só peixes/aquários) e salva
-// de forma IMUTÁVEL (não há edição nem exclusão depois).
+// Envio de inscrição com foto. A foto é validada (só aquários de água doce) e
+// exige confirmação de propriedade. A inscrição entra como "pendente" e só
+// participa da votação depois que o admin aprovar.
 app.post('/concursos/inscricao', async (req, res) => {
   const config = concursosStore.obterConfig();
   if (!config || config.ativo !== true) {
@@ -2467,12 +2542,18 @@ app.post('/concursos/inscricao', async (req, res) => {
   if (agora < config.inscricaoDe || agora > config.inscricaoAte) {
     return res.status(400).json({ erro: 'As inscrições não estão abertas neste momento.' });
   }
-  const { imagem, nome, apelido, dispositivoId } = req.body || {};
+  const { imagem, nome, apelido, consentimento, dispositivoId } = req.body || {};
   if (!imagem || typeof imagem !== 'string') {
     return res.status(400).json({ erro: 'Envie a foto do aquário (imagem).' });
   }
-  if (!String(nome || '').trim() || !String(apelido || '').trim()) {
-    return res.status(400).json({ erro: 'Informe nome e apelido.' });
+  if (!String(nome || '').trim()) {
+    return res.status(400).json({ erro: 'Informe o nome do participante.' });
+  }
+  if (consentimento !== true) {
+    return res.status(400).json({
+      codigo: 'CONSENTIMENTO_OBRIGATORIO',
+      erro: 'Confirme que a foto enviada é de um aquário de sua propriedade.',
+    });
   }
   // Uma inscrição por dispositivo.
   const jaInscrito = concursosStore
@@ -2486,14 +2567,14 @@ app.post('/concursos/inscricao', async (req, res) => {
   const prefixo = imagem.match(/^data:([^;]+);base64,/) ? imagem.match(/^data:([^;]+);base64,/)[1] : 'image/jpeg';
   const dataUrl = `data:${prefixo};base64,${base64}`;
 
-  // Validação: só fotos de peixes/aquários.
+  // Validação: só fotos do AQUÁRIO INTEIRO (concurso).
   const provedores = semChavesValidacao();
   let valida = false;
   let motivo = '';
   if (provedores.length > 0) {
     if (process.env.GEMINI_API_KEY) {
       try {
-        const r = await validarFotoGemini(base64, prefixo, PROMPT_VALIDACAO_AQUARIO);
+        const r = await validarFotoGemini(base64, prefixo, PROMPT_VALIDACAO_CONCURSO);
         valida = r.valida;
         motivo = r.motivo || '';
       } catch (e) {
@@ -2502,7 +2583,7 @@ app.post('/concursos/inscricao', async (req, res) => {
     }
     if (!valida && process.env.OPENAI_API_KEY) {
       try {
-        const r = await validarFotoOpenAI(dataUrl, PROMPT_VALIDACAO_AQUARIO);
+        const r = await validarFotoOpenAI(dataUrl, PROMPT_VALIDACAO_CONCURSO);
         valida = r.valida;
         motivo = r.motivo || '';
       } catch (e) {
@@ -2512,7 +2593,7 @@ app.post('/concursos/inscricao', async (req, res) => {
     if (!valida) {
       return res.status(422).json({
         codigo: 'foto_invalida',
-        erro: motivo || 'A foto precisa mostrar um peixe de água doce ou um aquário.',
+        erro: motivo || 'A foto precisa mostrar o aquário inteiro em cena, não apenas um peixe.',
       });
     }
   }
@@ -2527,13 +2608,16 @@ app.post('/concursos/inscricao', async (req, res) => {
   }
   const fotoUrl = `${urlBasePublica(req).replace(/\/$/, '')}/concursos/${nomeArquivo}`;
 
+  const nomeParticipante = String(nome).trim();
   const inscricao = concursosStore.criarInscricao({
-    nome: String(nome).trim(),
-    apelido: String(apelido).trim(),
+    nome: nomeParticipante,
+    apelido: String(apelido || '').trim() || nomeParticipante,
     dispositivoId: String(dispositivoId || ''),
     foto: fotoUrl,
+    consentimento: true,
+    status: 'pendente',
   });
-  res.status(201).json({ ok: true, inscricao: { id: inscricao.id, foto: inscricao.foto } });
+  res.status(201).json({ ok: true, inscricao: { id: inscricao.id, foto: inscricao.foto, status: 'pendente' } });
 });
 
 // Votação: 1 voto por dispositivo.
@@ -2564,6 +2648,36 @@ app.post('/concursos/ganhador', (req, res) => {
   const g = concursosStore.definirGanhador(inscricaoId);
   if (!g) return res.status(404).json({ erro: 'Inscrição não encontrada.' });
   res.json({ ok: true, ganhador: g });
+});
+
+// ============ MODERAÇÃO DE INSCRIÇÕES (admin) ============
+// O admin revisa cada inscrição antes da votação. Só inscrições "aprovadas"
+// aparecem no app e no link público de votação.
+
+// Aprova uma inscrição (está dentro das regras → participa da votação).
+app.post('/concursos/aprovar', (req, res) => {
+  if (!exigirAdmin(req, res)) return;
+  const { inscricaoId } = req.body || {};
+  const inscricao = concursosStore.atualizarInscricao(inscricaoId, { status: 'aprovado' });
+  if (!inscricao) return res.status(404).json({ erro: 'Inscrição não encontrada.' });
+  res.json({ ok: true, inscricao });
+});
+
+// Rejeita uma inscrição (não segue as regras → não aparece na votação).
+app.post('/concursos/rejeitar', (req, res) => {
+  if (!exigirAdmin(req, res)) return;
+  const { inscricaoId } = req.body || {};
+  const inscricao = concursosStore.atualizarInscricao(inscricaoId, { status: 'rejeitado' });
+  if (!inscricao) return res.status(404).json({ erro: 'Inscrição não encontrada.' });
+  res.json({ ok: true, inscricao });
+});
+
+// Remove por completo uma inscrição (ex.: conteúdo impróprio).
+app.delete('/concursos/inscricao/:id', (req, res) => {
+  if (!exigirAdmin(req, res)) return;
+  const removido = concursosStore.removerInscricao(req.params.id);
+  if (!removido) return res.status(404).json({ erro: 'Inscrição não encontrada.' });
+  res.json({ ok: true });
 });
 
 // ============================ FIM CONCURSOS ============================
@@ -2863,7 +2977,7 @@ app.get('/admin-ofertas', (req, res) => {
 
 // ============================ TESTER (limite de testadores) ============================
 // O app consulta esta rota no boot (ambiente tester) para validar o acesso:
-//  - no máximo LIMITE_TESTERS dispositivos distintos;
+//  - acesso ILIMITADO (quem recebeu o link entra; não há limite de vagas);
 //  - expira em testerStore.EXPIRA_EM (30/09/2026) mesmo que esqueçam de tirar o link do ar.
 
 app.post('/tester/validar', (req, res) => {
@@ -2872,7 +2986,7 @@ app.post('/tester/validar', (req, res) => {
   if (!r.ok) {
     return res.status(403).json({ ok: false, codigo: r.codigo, motivo: r.motivo });
   }
-  res.json({ ok: true, limite: testerStore.LIMITE_TESTERS });
+  res.json({ ok: true, limite: 'ilimitado' });
 });
 
 app.get('/tester/admin', (req, res) => {

@@ -25,7 +25,7 @@ services:
         sync: false
       # URL pública do front (ex.: https://aquariapp.netlify.app)
       - key: ALLOWED_ORIGINS
-        value: https://SEU_FRONT_URL
+        value: https://serene-selkie-310f60.netlify.app
       # URL pública deste backend (ex.: https://aquariapp-ia.onrender.com)
       - key: PUBLIC_BASE_URL
-        value: https://SEU_BACKEND_URL
+        value: https://aquariapp-ia.onrender.com

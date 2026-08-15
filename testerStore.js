@@ -3,9 +3,9 @@ const path = require('path');
 
 const ARQUIVO = path.join(__dirname, 'tester.json');
 
-// Limite de testadores e expiração garantida (segurança caso esqueçam de tirar
-// o link do ar). O servidor é a fonte da verdade para ambos.
-const LIMITE_TESTERS = 6;
+// Acesso ilimitado: só as pessoas que receberem o link usam o app (o próprio
+// link é a "senha" de acesso). Mantém a expiração garantida como segurança,
+// caso esqueçam de tirar o link do ar.
 const EXPIRA_EM = new Date('2026-09-30T23:59:59-03:00').getTime();
 
 function ler() {
@@ -28,15 +28,15 @@ function salvar(dados) {
 function estado() {
   const dados = ler();
   return {
-    limite: LIMITE_TESTERS,
+    limite: 'ilimitado',
     expiraEm: EXPIRA_EM,
     dispositivos: Array.isArray(dados.dispositivos) ? dados.dispositivos : [],
   };
 }
 
-// Valida o acesso de um dispositivo de teste.
+// Valida o acesso de um dispositivo de teste. Sem limite de vagas: todo
+// dispositivo que recebeu o link é liberado (apenas a expiração limita).
 // Retorna { ok: true } se liberado, ou { ok: false, codigo, motivo } se negado.
-// Codigos: 'EXPIRADO' | 'LIMITE_ATINGIDO'
 function validar(dispositivoId) {
   const e = estado();
   const agora = Date.now();
@@ -50,21 +50,13 @@ function validar(dispositivoId) {
     return { ok: false, codigo: 'SEM_ID', motivo: 'Não foi possível identificar o dispositivo.' };
   }
 
+  // Registra o dispositivo na 1ª visita (apenas para o admin acompanhar quantos
+  // abriram o link), mas NUNCA nega acesso por quantidade.
   const jaRegistrado = e.dispositivos.some((d) => d.id === id);
-  if (jaRegistrado) {
-    return { ok: true };
+  if (!jaRegistrado) {
+    const nova = [...e.dispositivos, { id, registradoEm: agora }];
+    salvar({ ...ler(), dispositivos: nova });
   }
-
-  if (e.dispositivos.length >= e.limite) {
-    return {
-      ok: false,
-      codigo: 'LIMITE_ATINGIDO',
-      motivo: `Limite de testadores atingido (${e.limite}).`,
-    };
-  }
-
-  const nova = [...e.dispositivos, { id, registradoEm: agora }];
-  salvar({ ...ler(), dispositivos: nova });
   return { ok: true };
 }
 
@@ -72,7 +64,7 @@ function listar() {
   return estado();
 }
 
-// Permite liberar uma vaga (útil se um testador desistir). Exige chave admin.
+// Permite remover um dispositivo da lista (útil se quiser deixar de acompanhá-lo).
 function remover(dispositivoId) {
   const e = estado();
   const nova = e.dispositivos.filter((d) => d.id !== dispositivoId);
@@ -81,4 +73,4 @@ function remover(dispositivoId) {
   return true;
 }
 
-module.exports = { validar, listar, remover, LIMITE_TESTERS, EXPIRA_EM };
+module.exports = { validar, listar, remover, LIMITE_TESTERS: null, EXPIRA_EM };

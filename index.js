@@ -500,7 +500,7 @@ async function buscarImagemWikipediaPorTermo(termo) {
     try {
       const url =
         `https://${idioma}.wikipedia.org/w/api.php?action=query&generator=search` +
-        `&gsrsearch=${encodeURIComponent(termo)}&gsrlimit=8&prop=pageimages|extracts` +
+        `&gsrsearch=${encodeURIComponent(termo)}&gsrlimit=10&prop=pageimages|extracts` +
         `&exintro&explaintext&piprop=name|original&format=json&origin=*`;
       const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
       if (!res.ok) continue;
@@ -513,21 +513,32 @@ async function buscarImagemWikipediaPorTermo(termo) {
       const ordenadas = lista
         .map((p) => ({ p, score: pontuarPaginaAquarismo(p, termo) }))
         .sort((a, b) => b.score - a.score);
-      const melhor = ordenadas[0];
-      if (melhor.score <= 0) continue;
 
-      const pagina = melhor.p;
-      const nomeArquivo = pagina.pageimage || '';
-      if (nomeArquivo) {
-        const enc = encodeURIComponent(nomeArquivo.replace(/ /g, '_'));
-        return `https://${idioma}.wikipedia.org/wiki/Special:FilePath/${enc}?width=480`;
+      // Pega a primeira página com foto real (raster), evitando mapas/vetores.
+      for (const { p } of ordenadas) {
+        if (p.score <= 0) continue;
+        if (p.pageimage && imagemReferenciaAceitavel('', p.pageimage)) {
+          const enc = encodeURIComponent(String(p.pageimage).replace(/ /g, '_'));
+          return `https://${idioma}.wikipedia.org/wiki/Special:FilePath/${enc}?width=480`;
+        }
+        if (p.original && p.original.source && imagemReferenciaAceitavel(p.original.source, '')) {
+          return p.original.source;
+        }
       }
-      if (pagina.original && pagina.original.source) return pagina.original.source;
     } catch (e) {
       console.warn(`[buscarImagemWikipedia ${idioma}]`, e.message);
     }
   }
   return '';
+}
+
+// Só aceita fotos reais: evita vetores (SVG) e imagens de mapa de distribuição.
+function imagemReferenciaAceitavel(url, nomeArquivo) {
+  const s = (String(url || '') + ' ' + String(nomeArquivo || '')).toLowerCase();
+  if (/\.svg(?:$|[?#])/.test(s)) return false;
+  if (/mapa?[-_.]?\.(?:jpe?g|png|gif|webp)(?:$|[?#])/.test(s)) return false;
+  if (/\.(?:jpe?g|png|gif|webp)(?:$|[?#])/.test(s)) return true;
+  return true;
 }
 
 async function comFoto(r) {

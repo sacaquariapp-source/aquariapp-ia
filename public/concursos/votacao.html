@@ -31,6 +31,22 @@
     border-radius: 12px;
     overflow: hidden;
   }
+  .card.destaque {
+    border: 3px solid #FFC857;
+    box-shadow: 0 0 0 3px rgba(255, 200, 87, 0.25);
+  }
+  .destaque-rotulo {
+    background: #FFC857; color: #001020; font-weight: 900;
+    font-size: 13px; text-align: center; padding: 8px;
+  }
+  .acoes-card {
+    display: flex; gap: 8px; margin-top: 8px;
+  }
+  .acoes-card button { flex: 1; }
+  .btn-mini-share {
+    background: #25D366; color: #fff; border: none; border-radius: 10px;
+    padding: 10px; font-weight: 900; font-size: 13px; cursor: pointer;
+  }
   .card img { width: 100%; height: 220px; object-fit: cover; display: block; }
   .card-body { padding: 10px; }
   .card-name { font-weight: 800; font-size: 15px; margin: 0; }
@@ -80,6 +96,20 @@
   var API = window.AQUARIAPP_API || '';
   var DEVICE_KEY = 'aquariapp:voto-dispositivo';
   var jaVotou = false;
+  // Foto em destaque: a enquete chega com ?votar=<id da inscricao> quando o
+  // participante compartilha o próprio link no WhatsApp.
+  var DESTAQUE = null;
+  try {
+    var params = new URLSearchParams(window.location.search);
+    DESTAQUE = params.get('votar');
+  } catch (e) {
+    DESTAQUE = null;
+  }
+
+  // Link absoluto para a enquete com uma foto em destaque (para compartilhar).
+  function linkPara(id) {
+    return window.location.origin + window.location.pathname + '?votar=' + id;
+  }
 
   function obterId() {
     try {
@@ -130,21 +160,25 @@
       if (dados.inscricoes && dados.inscricoes.length > 0) {
         conteudo += '<div class="grid">';
         dados.inscricoes.forEach(function (i) {
-          conteudo += '<div class="card">';
+          var ehDestaque = DESTAQUE && i.id === DESTAQUE;
+          conteudo += '<div class="card' + (ehDestaque ? ' destaque' : '') + '" id="card-' + i.id + '">';
+          if (ehDestaque) conteudo += '<div class="destaque-rotulo">👇 Vote neste aquário</div>';
           if (i.foto) conteudo += '<img src="' + i.foto + '" alt="Foto do participante" />';
           conteudo += '<div class="card-body">';
           conteudo += '<p class="card-name">' + (i.nome || 'Participante') + '</p>';
           if (i.apelido && i.apelido !== i.nome) conteudo += '<p class="card-apelido">@' + i.apelido + '</p>';
           conteudo += '<p class="card-votos">' + (i.votos || 0) + ' votos</p>';
+          conteudo += '<div class="acoes-card">';
           conteudo += '<button data-insc="' + i.id + '" ' + (jaVotou ? 'disabled' : '') + '>Votar</button>';
-          conteudo += '</div></div>';
+          conteudo += '<button class="btn-mini-share" data-compartilhar="' + i.id + '">WhatsApp</button>';
+          conteudo += '</div></div></div>';
         });
         conteudo += '</div>';
         if (jaVotou) conteudo += '<div class="ok">✅ Você já votou neste concurso.</div>';
       } else {
         conteudo += '<div class="msg">Nenhum participante inscrito ainda.</div>';
       }
-    } else if (dados.fase === 'encerrado') {
+    } else if (dados.fase === 'encerrado' || dados.fase === 'finalizado') {
       if (dados.ganhador) {
         conteudo += '<div class="box" style="border-color:#FFC857;text-align:center;">';
         conteudo += '<div style="font-weight:900;color:#FFC857;">🏆 VENCEDOR</div>';
@@ -166,6 +200,15 @@
         votar(btn.getAttribute('data-insc'), btn);
       });
     });
+    Array.prototype.forEach.call(document.querySelectorAll('button[data-compartilhar]'), function (btn) {
+      btn.addEventListener('click', function () {
+        compartilharInscricao(btn.getAttribute('data-compartilhar'));
+      });
+    });
+    if (DESTAQUE) {
+      var alvo = document.getElementById('card-' + DESTAQUE);
+      if (alvo && alvo.scrollIntoView) alvo.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
   }
 
   function votar(inscricaoId, btn) {
@@ -205,6 +248,11 @@
       });
   }
 
+  window.compartilharInscricao = function (id) {
+    var link = linkPara(id);
+    var msg = 'Participe da votação do concurso de aquários! Vote no melhor aquário:\n' + link;
+    window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
+  };
   window.compartilharWhatsApp = function () {
     var link = window.location.href;
     var msg = 'Participe da votação do concurso de aquários! Vote no melhor aquário:\n' + link;

@@ -89,7 +89,9 @@ function statusDeDispositivo(dispositivoId) {
   const norm = String(dispositivoId || '').trim();
   if (!norm) return null;
   const ins = listarInscricoes().find((i) => String(i.dispositivoId || '') === norm);
-  return ins ? { status: ins.status || 'pendente', inscricaoId: ins.id } : null;
+  return ins
+    ? { status: ins.status || 'pendente', inscricaoId: ins.id, motivo: ins.motivo || '', foto: ins.foto || '' }
+    : null;
 }
 
 // --- Votação ---
@@ -104,7 +106,10 @@ function registrarVoto(inscricaoId, dispositivoId) {
   const votantes = Array.isArray(inscricao.votantes) ? inscricao.votantes : [];
   const norm = String(dispositivoId || '').trim();
   if (!norm) return { ok: false, motivo: 'Dispositivo inválido.' };
-  if (votantes.includes(norm)) {
+  // Regra: UM voto por dispositivo em TODO o concurso (não por foto). Se o
+  // dispositivo já votou em qualquer inscrição, o voto é recusado.
+  const jaVotouEmAlguma = inscricoes.some((i) => Array.isArray(i.votantes) && i.votantes.includes(norm));
+  if (jaVotouEmAlguma) {
     return { ok: false, motivo: 'JÁ_VOTOU', jaVotou: true };
   }
   votantes.push(norm);
@@ -134,6 +139,27 @@ function obterGanhador() {
   return { inscricaoId: inscricao.id, inscricao, declaradoEm: dados.ganhador.declaradoEm };
 }
 
+// --- Histórico / encerramento ---
+// Após a declaração do vencedor o admin pode encerrar o concurso. As fotos são
+// apagadas (o arquivo é removido na rota) e fica guardada apenas a "memória":
+// categoria do concurso + dados do vencedor.
+function encerrarConcurso(historico) {
+  const store = ler();
+  const registros = Array.isArray(store.historico) ? store.historico : [];
+  registros.push(historico);
+  store.historico = registros;
+  store.inscricoes = [];
+  store.ganhador = null;
+  if (store.config) store.config = { ...store.config, ativo: false };
+  salvar(store);
+  return historico;
+}
+
+function obterHistorico() {
+  const dados = ler();
+  return Array.isArray(dados.historico) ? dados.historico : [];
+}
+
 module.exports = {
   obterConfig,
   salvarConfig,
@@ -146,4 +172,6 @@ module.exports = {
   registrarVoto,
   definirGanhador,
   obterGanhador,
+  encerrarConcurso,
+  obterHistorico,
 };

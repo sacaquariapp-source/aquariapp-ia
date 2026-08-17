@@ -91,6 +91,7 @@ if (process.env.TRUST_PROXY) {
 
 app.use(
   helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
@@ -537,6 +538,28 @@ async function comFoto(r) {
   return enriquecido;
 }
 
+// Gemini/OpenAI às vezes devolvem texto antes/depois do JSON mesmo com
+// responseMimeType/json_object. Extrai o objeto JSON de forma robusta.
+function extrairJSON(conteudo) {
+  const s = String(conteudo || '').trim();
+  if (!s) throw new Error('resposta vazia');
+  try {
+    return JSON.parse(s);
+  } catch (e) {
+    const ini = s.indexOf('{');
+    const fim = s.lastIndexOf('}');
+    if (ini !== -1 && fim > ini) {
+      const fatia = s.slice(ini, fim + 1);
+      try {
+        return JSON.parse(fatia);
+      } catch (e2) {
+        throw new Error(`resposta não é JSON válido: ${s.slice(0, 200)}`);
+      }
+    }
+    throw new Error(`resposta não é JSON válido: ${s.slice(0, 200)}`);
+  }
+}
+
 async function viaOpenAI(imagem) {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
@@ -569,7 +592,7 @@ async function viaOpenAI(imagem) {
   const json = await res.json();
   const conteudo = json.choices?.[0]?.message?.content;
   if (!conteudo) throw new Error('OpenAI: resposta vazia');
-  const dados = JSON.parse(conteudo);
+  const dados = extrairJSON(conteudo);
   if (dados.tipo === 'invalido') throw new FotoInvalidaError(dados.motivo);
   if (dados.tipo === 'desconhecido') throw new Error('OpenAI: não reconheceu a imagem');
   return normalizarResultado({ provedor: 'OpenAI', ...dados });
@@ -618,7 +641,7 @@ async function viaGemini(base64, mime, textoExtra, sistemaPrompt) {
     ?.map((p) => p.text || '')
     .join('');
   if (!conteudo) throw new Error('Gemini: resposta vazia');
-  const dados = JSON.parse(conteudo);
+  const dados = extrairJSON(conteudo);
   if (dados.tipo === 'invalido') throw new FotoInvalidaError(dados.motivo);
   if (dados.tipo === 'desconhecido') throw new Error('Gemini: não reconheceu a imagem');
   return normalizarResultado({ provedor: 'Gemini', ...dados });
@@ -662,7 +685,7 @@ async function validarFotoGemini(base64, mime, prompt) {
     ?.map((p) => p.text || '')
     .join('');
   if (!conteudo) throw new Error('Gemini validação: resposta vazia');
-  const dados = JSON.parse(conteudo);
+  const dados = extrairJSON(conteudo);
   return { valida: !!dados.valida, motivo: dados.motivo || '' };
 }
 
@@ -697,7 +720,7 @@ async function validarFotoOpenAI(dataUrl, prompt) {
   const json = await res.json();
   const conteudo = json.choices?.[0]?.message?.content;
   if (!conteudo) throw new Error('OpenAI validação: resposta vazia');
-  const dados = JSON.parse(conteudo);
+  const dados = extrairJSON(conteudo);
   return { valida: !!dados.valida, motivo: dados.motivo || '' };
 }
 
@@ -2467,13 +2490,19 @@ app.get('/concursos', (req, res) => {
     return res.json({ ativo: false, config: null });
   }
   const agora = Date.now();
-  const fase =
-    agora < config.inscricaoAte
+  let fase =
+    agora < config.inscricaoDe
+      ? 'aguarda_inscricao'
+      : agora >= config.inscricaoDe && (!config.inscricaoAte || agora < config.inscricaoAte)
       ? 'inscricoes'
-      : agora < config.votacaoAte
-      ? 'votacao'
-      : 'encerrado';
-  const ganhador = fase === 'encerrado' ? concursosStore.obterGanhador() : null;
+      : agora < config.votacaoDe
+      ? 'aguarda_votacao'
+      : config.votacaoAte && agora >= config.votacaoAte
+      ? 'encerrado'
+      : 'votacao';
+  // Vencedor declarado → concurso "finalizado": todos veem o anúncio do vencedor.
+  const ganhador = concursosStore.obterGanhador();
+  if (ganhador) fase = 'finalizado';
   // Link de votação: usa o configurado ou gera automaticamente.
   const linkBase = `${urlBasePublica(req).replace(/\/$/, '')}/concurso/votacao`;
   const linkVotacao = String(config.linkVotacao || '').trim() || linkBase;
@@ -2487,6 +2516,8 @@ app.get('/concursos', (req, res) => {
       apelido: i.apelido || '',
       foto: i.foto || '',
       votos: i.votos || 0,
+      // Link público da enquete com a foto do participante em destaque.
+      linkVoto: `${linkBase}?votar=${i.id}`,
     }));
   // Status do dispositivo que está consultando (para o app mostrar "inscrito").
   const dispositivoId = String((req.query && req.query.dispositivoId) || '').trim();
@@ -2535,6 +2566,7 @@ app.get('/concursos/admin', (req, res) => {
     config: concursosStore.obterConfig(),
     inscricoes: concursosStore.listarInscricoes(),
     ganhador: concursosStore.obterGanhador(),
+    historico: concursosStore.obterHistorico(),
   });
 });
 
@@ -2568,7 +2600,7 @@ app.post('/concursos/inscricao', async (req, res) => {
     return res.status(400).json({ erro: 'O concurso não está ativo.' });
   }
   const agora = Date.now();
-  if (agora < config.inscricaoDe || agora > config.inscricaoAte) {
+  if (agora < config.inscricaoDe || (config.inscricaoAte && agora > config.inscricaoAte)) {
     return res.status(400).json({ erro: 'As inscrições não estão abertas neste momento.' });
   }
   const { imagem, nome, apelido, consentimento, dispositivoId } = req.body || {};
@@ -2584,11 +2616,13 @@ app.post('/concursos/inscricao', async (req, res) => {
       erro: 'Confirme que a foto enviada é de um aquário de sua propriedade.',
     });
   }
-  // Uma inscrição por dispositivo.
-  const jaInscrito = concursosStore
-    .listarInscricoes()
-    .some((i) => String(i.dispositivoId || '') === String(dispositivoId || ''));
-  if (jaInscrito) {
+  // Uma inscrição por dispositivo. Se a anterior foi REJEITADA e ainda está no
+  // período de inscrições, o usuário pode reenviar outra foto (substitui a antiga
+  // e volta para "em avaliação").
+  const dispositivoNorm = String(dispositivoId || '').trim();
+  const inscricaoAnterior =
+    concursosStore.listarInscricoes().find((i) => String(i.dispositivoId || '') === dispositivoNorm) || null;
+  if (inscricaoAnterior && inscricaoAnterior.status !== 'rejeitado') {
     return res.status(400).json({ erro: 'JÁ_INSCRITO', motivo: 'Este dispositivo já enviou uma foto para o concurso.' });
   }
 
@@ -2596,27 +2630,25 @@ app.post('/concursos/inscricao', async (req, res) => {
   const prefixo = imagem.match(/^data:([^;]+);base64,/) ? imagem.match(/^data:([^;]+);base64,/)[1] : 'image/jpeg';
   const dataUrl = `data:${prefixo};base64,${base64}`;
 
-  // Validação: só fotos do AQUÁRIO INTEIRO (concurso).
+  // Validação: só fotos do AQUÁRIO INTEIRO (concurso). Os provedores de IA rodam
+  // em paralelo para responder rápido — se qualquer um aprovar, a foto passa.
   const provedores = semChavesValidacao();
   let valida = false;
   let motivo = '';
   if (provedores.length > 0) {
-    if (process.env.GEMINI_API_KEY) {
-      try {
-        const r = await validarFotoGemini(base64, prefixo, PROMPT_VALIDACAO_CONCURSO);
-        valida = r.valida;
-        motivo = r.motivo || '';
-      } catch (e) {
-        console.error('Falha Gemini (concurso):', e.message);
-      }
-    }
-    if (!valida && process.env.OPENAI_API_KEY) {
-      try {
-        const r = await validarFotoOpenAI(dataUrl, PROMPT_VALIDACAO_CONCURSO);
-        valida = r.valida;
-        motivo = r.motivo || '';
-      } catch (e) {
-        console.error('Falha OpenAI (concurso):', e.message);
+    const tentativas = [];
+    if (process.env.GEMINI_API_KEY) tentativas.push(validarFotoGemini(base64, prefixo, PROMPT_VALIDACAO_CONCURSO));
+    if (process.env.OPENAI_API_KEY) tentativas.push(validarFotoOpenAI(dataUrl, PROMPT_VALIDACAO_CONCURSO));
+    const resultados = await Promise.allSettled(tentativas);
+    for (const r of resultados) {
+      if (r.status === 'fulfilled') {
+        if (r.value.valida) {
+          valida = true;
+          break;
+        }
+        if (!motivo) motivo = r.value.motivo || '';
+      } else {
+        console.error('Falha validação (concurso):', r.reason?.message);
       }
     }
     if (!valida) {
@@ -2638,14 +2670,34 @@ app.post('/concursos/inscricao', async (req, res) => {
   const fotoUrl = `${urlBasePublica(req).replace(/\/$/, '')}/concursos/${nomeArquivo}`;
 
   const nomeParticipante = String(nome).trim();
-  const inscricao = concursosStore.criarInscricao({
-    nome: nomeParticipante,
-    apelido: String(apelido || '').trim() || nomeParticipante,
-    dispositivoId: String(dispositivoId || ''),
-    foto: fotoUrl,
-    consentimento: true,
-    status: 'pendente',
-  });
+  let inscricao;
+  if (inscricaoAnterior) {
+    // Reenvio: apaga a foto antiga, grava a nova e volta para "em avaliação".
+    const arquivoAntigo = String(inscricaoAnterior.foto || '').split('/').pop();
+    if (arquivoAntigo && /^concurso-.*\.\w+$/.test(arquivoAntigo)) {
+      try {
+        fs.unlinkSync(path.join(CONCURSOS_UPLOADS_DIR, arquivoAntigo));
+      } catch (e) {
+        console.warn('Falha ao remover foto antiga do concurso:', e.message);
+      }
+    }
+    inscricao = concursosStore.atualizarInscricao(inscricaoAnterior.id, {
+      foto: fotoUrl,
+      status: 'pendente',
+      criadoEm: Date.now(),
+      motivo: '',
+      rejeitadoEm: 0,
+    });
+  } else {
+    inscricao = concursosStore.criarInscricao({
+      nome: nomeParticipante,
+      apelido: String(apelido || '').trim() || nomeParticipante,
+      dispositivoId: dispositivoNorm,
+      foto: fotoUrl,
+      consentimento: true,
+      status: 'pendente',
+    });
+  }
   res.status(201).json({ ok: true, inscricao: { id: inscricao.id, foto: inscricao.foto, status: 'pendente' } });
 });
 
@@ -2656,7 +2708,7 @@ app.post('/concursos/votar', (req, res) => {
     return res.status(400).json({ erro: 'O concurso não está ativo.' });
   }
   const agora = Date.now();
-  if (agora < config.votacaoDe || agora > config.votacaoAte) {
+  if (agora < config.votacaoDe || (config.votacaoAte && agora > config.votacaoAte)) {
     return res.status(400).json({ erro: 'A votação não está aberta neste momento.' });
   }
   const { inscricaoId, dispositivoId } = req.body || {};
@@ -2679,6 +2731,144 @@ app.post('/concursos/ganhador', (req, res) => {
   res.json({ ok: true, ganhador: g });
 });
 
+// Admin encerra o concurso: apaga as fotos e guarda apenas a memória da
+// categoria + vencedor. Tudo volta ao normal para os usuários (banner some).
+app.post('/concursos/encerrar', (req, res) => {
+  if (!exigirAdmin(req, res)) return;
+  const config = concursosStore.obterConfig() || {};
+  const inscricoes = concursosStore.listarInscricoes();
+  const ganhador = concursosStore.obterGanhador();
+  for (const i of inscricoes) {
+    const arquivo = String(i.foto || '').split('/').pop();
+    if (arquivo && /^concurso-.*\.\w+$/.test(arquivo)) {
+      try {
+        fs.unlinkSync(path.join(CONCURSOS_UPLOADS_DIR, arquivo));
+      } catch (e) {
+        console.warn('Falha ao apagar foto ao encerrar concurso:', e.message);
+      }
+    }
+  }
+  const historico = concursosStore.encerrarConcurso({
+    categoria: config.categoria || '',
+    premio: config.premio || '',
+    encerradoEm: Date.now(),
+    ganhador: ganhador
+      ? {
+          nome: ganhador.inscricao.nome || '',
+          apelido: ganhador.inscricao.apelido || '',
+          votos: ganhador.inscricao.votos || 0,
+          premio: config.premio || '',
+        }
+      : null,
+  });
+  res.json({ ok: true, historico });
+});
+
+// Lê a foto da inscrição (arquivo em CONCURSOS_UPLOADS_DIR) e a devolve como
+// data URL. Isso deixa a página de exportação auto-contida (funciona até com o
+// CSP do helmet, que só permite img-src 'self' data: https:).
+function fotoParaDataUrl(url) {
+  if (!url) return '';
+  const arquivo = String(url).split('/').pop();
+  if (!arquivo || !/^concurso-.*\.\w+$/.test(arquivo)) return url;
+  try {
+    const buf = fs.readFileSync(path.join(CONCURSOS_UPLOADS_DIR, arquivo));
+    const mime = /\.png$/i.test(arquivo)
+      ? 'image/png'
+      : /\.webp$/i.test(arquivo)
+      ? 'image/webp'
+      : /\.gif$/i.test(arquivo)
+      ? 'image/gif'
+      : 'image/jpeg';
+    return `data:${mime};base64,${buf.toString('base64')}`;
+  } catch (e) {
+    console.warn('Falha ao ler foto para exportação:', e.message);
+    return url;
+  }
+}
+
+// Registro das fotos aprovadas para a votação (exportação). Abre uma página
+// com todas as fotos aprovadas (nome + votos), pronta para imprimir/salvar.
+app.get('/concursos/admin/exportar-votacao', (req, res) => {
+  const chave = req.get('X-Admin-Key') || String((req.query && req.query.chave) || '');
+  if (!chave || chave !== ADMIN_KEY) {
+    return res.status(401).send('Chave de administração inválida.');
+  }
+  const config = concursosStore.obterConfig() || {};
+  const ganhador = concursosStore.obterGanhador();
+  const inscricoes = concursosStore
+    .listarInscricoes()
+    .filter((i) => i.status === 'aprovado')
+    .sort((a, b) => (b.votos || 0) - (a.votos || 0));
+  const cards = inscricoes
+    .map((i) => {
+      const src = i.foto ? fotoParaDataUrl(i.foto) : '';
+      return `
+      <div class="card">
+        ${src ? `<img src="${src}" alt="Foto do participante" />` : ''}
+        <div class="card-body">
+          <p class="card-name">${(i.nome || '').replace(/</g, '&lt;')}${i.apelido && i.apelido !== i.nome ? ` <span class="apelido">@${(i.apelido || '').replace(/</g, '&lt;')}</span>` : ''}</p>
+          <p class="card-votos">${i.votos || 0} votos</p>
+        </div>
+      </div>`;
+    })
+    .join('');
+  const ganhadorHtml = ganhador
+    ? `
+      <div class="ganhador">
+        <div class="ganhador-titulo">🏆 VENCEDOR</div>
+        ${fotoParaDataUrl(ganhador.inscricao.foto) ? `<img src="${fotoParaDataUrl(ganhador.inscricao.foto)}" alt="Vencedor" />` : ''}
+        <div class="ganhador-nome">${(ganhador.inscricao.nome || '').replace(/</g, '&lt;')}</div>
+        <div class="ganhador-votos">${ganhador.inscricao.votos || 0} votos</div>
+      </div>`
+    : '';
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Registro de Votação — ${(config.categoria || 'Concurso').replace(/</g, '&lt;')}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 20px; font-family: system-ui, sans-serif; background: #f4f7fb; color: #10243d; }
+  .topo { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  h1 { font-size: 20px; margin: 0; }
+  .sub { color: #5b7a99; font-size: 13px; margin: 2px 0 0; }
+  .acoes { display: flex; gap: 8px; }
+  button { background: #0b2e4f; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-weight: 800; cursor: pointer; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+  .card { background: #fff; border: 1px solid #c7d9ea; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(16,36,61,0.08); }
+  .card img { width: 100%; height: 160px; object-fit: cover; display: block; }
+  .card-body { padding: 8px 10px; }
+  .card-name { margin: 0; font-weight: 800; font-size: 14px; }
+  .apelido { color: #0b2e4f; font-weight: 700; font-size: 12px; }
+  .card-votos { margin: 2px 0 0; color: #5b7a99; font-size: 12px; }
+  .ganhador { background: #fff7e6; border: 2px solid #FFC857; border-radius: 12px; padding: 14px; text-align: center; margin-bottom: 14px; }
+  .ganhador-titulo { font-weight: 900; color: #d98324; }
+  .ganhador img { max-width: 320px; width: 100%; border-radius: 10px; margin: 8px 0; }
+  .ganhador-nome { font-size: 20px; font-weight: 900; }
+  .ganhador-votos { color: #5b7a99; font-size: 13px; }
+  .vazio { color: #5b7a99; font-size: 13px; }
+  @media print { .acoes { display: none; } button { display: none; } body { background: #fff; } }
+</style>
+</head>
+<body>
+  <div class="topo">
+    <div>
+      <h1>📸 Registro de Votação — ${(config.categoria || 'Concurso').replace(/</g, '&lt;')}</h1>
+      <p class="sub">${config.premio ? `Prêmio: ${(config.premio || '').replace(/</g, '&lt;')}` : ''} · Emitido em ${new Date().toLocaleString('pt-BR')}</p>
+    </div>
+    <div class="acoes"><button onclick="window.print()">🖨️ Imprimir / Salvar PDF</button></div>
+  </div>
+  ${ganhadorHtml}
+  <h2>Fotos aprovadas (${inscricoes.length})</h2>
+  ${inscricoes.length === 0 ? '<p class="vazio">Nenhuma foto aprovada.</p>' : `<div class="grid">${cards}</div>`}
+</body>
+</html>`;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(html);
+});
+
 // ============ MODERAÇÃO DE INSCRIÇÕES (admin) ============
 // O admin revisa cada inscrição antes da votação. Só inscrições "aprovadas"
 // aparecem no app e no link público de votação.
@@ -2693,10 +2883,15 @@ app.post('/concursos/aprovar', (req, res) => {
 });
 
 // Rejeita uma inscrição (não segue as regras → não aparece na votação).
+// O motivo é gravado e enviado ao participante pelo app.
 app.post('/concursos/rejeitar', (req, res) => {
   if (!exigirAdmin(req, res)) return;
-  const { inscricaoId } = req.body || {};
-  const inscricao = concursosStore.atualizarInscricao(inscricaoId, { status: 'rejeitado' });
+  const { inscricaoId, motivo } = req.body || {};
+  const inscricao = concursosStore.atualizarInscricao(inscricaoId, {
+    status: 'rejeitado',
+    motivo: String(motivo || '').trim(),
+    rejeitadoEm: Date.now(),
+  });
   if (!inscricao) return res.status(404).json({ erro: 'Inscrição não encontrada.' });
   res.json({ ok: true, inscricao });
 });

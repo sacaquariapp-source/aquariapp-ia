@@ -21,6 +21,7 @@ const whatsappApi = require('./whatsappApi');
 const concursosStore = require('./concursosStore');
 const telemetriaStore = require('./telemetriaStore');
 const testerStore = require('./testerStore');
+const iaUsoStore = require('./iaUsoStore');
 
 const ADMIN_KEY = process.env.ADMIN_KEY || (process.env.NODE_ENV === 'production' ? '' : 'admin123');
 if (!ADMIN_KEY) {
@@ -2596,6 +2597,24 @@ app.get('/telemetria/admin', (req, res) => {
   const de = req.query.de ? Number(req.query.de) : null;
   const ate = req.query.ate ? Number(req.query.ate) : null;
   res.json(telemetriaStore.resumo({ plano, de, ate }));
+});
+
+// Recebe o consumo de IA (uma consulta ou lote) de um dispositivo, com o plano.
+app.post('/ia/uso', (req, res) => {
+  const { dispositivoId, plano, qtd, custo } = req.body || {};
+  const quantidade = Number(qtd) || 0;
+  if (!(quantidade > 0)) return res.status(400).json({ erro: 'Envie qtd > 0.' });
+  iaUsoStore.registrar({ dispositivoId, plano, qtd: quantidade, custo: Number(custo) || 0 });
+  res.json({ ok: true });
+});
+
+// Resumo do uso de IA por plano e período (painel do admin).
+app.get('/ia/uso/admin', (req, res) => {
+  if (!exigirAdmin(req, res)) return;
+  const plano = String(req.query.plano || '');
+  const de = req.query.de ? Number(req.query.de) : null;
+  const ate = req.query.ate ? Number(req.query.ate) : null;
+  res.json(iaUsoStore.resumo({ plano, de, ate }));
 });
 
 // ============================ FIM TELEMETRIA ============================

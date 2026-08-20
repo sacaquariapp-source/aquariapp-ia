@@ -21,58 +21,81 @@ function salvar(dados) {
   }
 }
 
-// --- Uso de seções ---
-function registrarSecao(secao) {
-  const dados = ler();
-  const hoje = new Date().toISOString().slice(0, 10);
-  const secoes = dados.secoes || {};
-  const s = secoes[secao] || { total: 0, porDia: {} };
-  s.total += 1;
-  s.porDia[hoje] = (s.porDia[hoje] || 0) + 1;
-  secoes[secao] = s;
-  salvar({ ...dados, secoes });
+const PLANOS_VALIDOS = ['tester', 'freemium', 'premium', 'basico'];
+function normalizarPlano(p) {
+  const v = String(p || '').toLowerCase().trim();
+  return PLANOS_VALIDOS.includes(v) ? v : '';
 }
 
-// --- Perfil de aquários ---
-function registrarPerfilAquario(aquario) {
+// --- Uso de seções (evento avulso com plano e data) ---
+function registrarSecao(secao, plano) {
   const dados = ler();
-  const perfil = dados.perfilAquarios || {};
-  const a = aquario || {};
-
-  const tipo = String(a.tipo || 'Não informado').trim() || 'Não informado';
-  const litros = parseFloat(a.litros);
-  const faixa = !litros || isNaN(litros)
-    ? 'Não informado'
-    : litros < 50 ? 'Até 50 L' : litros < 150 ? '50-150 L' : litros < 300 ? '150-300 L' : 'Mais de 300 L';
-
-  perfil.porTipo = incrementar(perfil.porTipo, tipo);
-  perfil.porFaixaLitros = incrementar(perfil.porFaixaLitros, faixa);
-  perfil.plantados = (perfil.plantados || 0) + (a.ehPlantado === 'Sim' ? 1 : 0);
-  perfil.naoPlantados = (perfil.naoPlantados || 0) + (a.ehPlantado === 'Não' ? 1 : 0);
-  perfil.comFauna = (perfil.comFauna || 0) + ((a.composicao && a.composicao.fauna && a.composicao.fauna.length > 0) ? 1 : 0);
-  perfil.comFlora = (perfil.comFlora || 0) + ((a.composicao && a.composicao.flora && a.composicao.flora.length > 0) ? 1 : 0);
-  perfil.total = (perfil.total || 0) + 1;
-
-  salvar({ ...dados, perfilAquarios: perfil });
+  const eventos = dados.eventosSecao || [];
+  eventos.push({
+    ts: Date.now(),
+    plano: normalizarPlano(plano),
+    secao: String(secao || '').trim().slice(0, 60),
+  });
+  salvar({ ...dados, eventosSecao: eventos });
 }
 
-function incrementar(obj, chave) {
-  const o = obj || {};
-  o[chave] = (o[chave] || 0) + 1;
-  return o;
+// --- Perfil de aquários (evento avulso com plano e data) ---
+function registrarPerfilAquario(aquario, plano) {
+  const dados = ler();
+  const eventos = dados.eventosAquario || [];
+  eventos.push({
+    ts: Date.now(),
+    plano: normalizarPlano(plano),
+    aquario: aquario || {},
+  });
+  salvar({ ...dados, eventosAquario: eventos });
 }
 
-// --- Resumo ---
-function resumo() {
+function noPeriodo(ts, de, ate) {
+  if (de && ts < de) return false;
+  if (ate && ts > ate) return false;
+  return true;
+}
+
+// --- Resumo filtrado por plano e período ---
+function resumo({ plano = '', de = null, ate = null } = {}) {
   const dados = ler();
-  const secoes = dados.secoes || {};
+  const filtroPlano = normalizarPlano(plano);
+
+  // Uso das seções
+  const secoes = {};
+  for (const ev of dados.eventosSecao || []) {
+    if (filtroPlano && ev.plano !== filtroPlano) continue;
+    if (!noPeriodo(ev.ts, de, ate)) continue;
+    const s = secoes[ev.secao] || { total: 0 };
+    s.total += 1;
+    secoes[ev.secao] = s;
+  }
   const listaSecoes = Object.entries(secoes)
-    .map(([nome, s]) => ({ secao: nome, total: s.total || 0, porDia: s.porDia || {} }))
+    .map(([nome, s]) => ({ secao: nome, total: s.total }))
     .sort((a, b) => b.total - a.total);
-  return {
-    secoes: listaSecoes,
-    perfilAquarios: dados.perfilAquarios || {},
-  };
+
+  // Perfil dos aquários
+  const perfil = { total: 0, plantados: 0, naoPlantados: 0, comFauna: 0, comFlora: 0, porTipo: {}, porFaixaLitros: {} };
+  for (const ev of dados.eventosAquario || []) {
+    if (filtroPlano && ev.plano !== filtroPlano) continue;
+    if (!noPeriodo(ev.ts, de, ate)) continue;
+    const a = ev.aquario || {};
+    const tipo = String(a.tipo || 'Não informado').trim() || 'Não informado';
+    const litros = parseFloat(a.litros);
+    const faixa = !litros || isNaN(litros)
+      ? 'Não informado'
+      : litros < 50 ? 'Até 50 L' : litros < 150 ? '50-150 L' : litros < 300 ? '150-300 L' : 'Mais de 300 L';
+    perfil.porTipo[tipo] = (perfil.porTipo[tipo] || 0) + 1;
+    perfil.porFaixaLitros[faixa] = (perfil.porFaixaLitros[faixa] || 0) + 1;
+    perfil.plantados += a.ehPlantado === 'Sim' ? 1 : 0;
+    perfil.naoPlantados += a.ehPlantado === 'Não' ? 1 : 0;
+    perfil.comFauna += a.composicao && a.composicao.fauna && a.composicao.fauna.length > 0 ? 1 : 0;
+    perfil.comFlora += a.composicao && a.composicao.flora && a.composicao.flora.length > 0 ? 1 : 0;
+    perfil.total += 1;
+  }
+
+  return { secoes: listaSecoes, perfilAquarios: perfil };
 }
 
 module.exports = {

@@ -21,7 +21,6 @@ const whatsappApi = require('./whatsappApi');
 const concursosStore = require('./concursosStore');
 const telemetriaStore = require('./telemetriaStore');
 const testerStore = require('./testerStore');
-const trialStore = require('./trialStore');
 
 const ADMIN_KEY = process.env.ADMIN_KEY || (process.env.NODE_ENV === 'production' ? '' : 'admin123');
 if (!ADMIN_KEY) {
@@ -91,7 +90,6 @@ if (process.env.TRUST_PROXY) {
 
 app.use(
   helmet({
-    crossOriginResourcePolicy: { policy: 'cross-origin' },
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
@@ -220,8 +218,6 @@ const rotasIA = [
   '/sugestao-aquario',
   '/avaliacao-aquario',
   '/cronograma-alimentar',
-  '/alimentos-recomendados',
-  '/sugestoes-ajuste',
   '/pergunta',
 ];
 rotasIA.forEach((rota) => app.use(rota, limiterIA));
@@ -286,16 +282,6 @@ const PROMPT_VALIDACAO_AQUARIO =
   'animais ou insetos TERRESTRES, plantas terrestres, comidas, paisagens de terra, mar ou água salgada. ' +
   'Se tiver dúvida, responda valida false.';
 
-const PROMPT_VALIDACAO_CONCURSO =
-  'Você é o verificador de fotos de um CONCURSO de aquários de água doce. Analise a imagem e responda ' +
-  'APENAS com JSON válido no formato {"valida": true} ou {"valida": false, "motivo": "explicação curta em português"}. ' +
-  'A foto é VÁLIDA somente se mostrar o AQUÁRIO INTEIRO em cena — o tanque completo com água, vidro e ambiente ' +
-  '(decoração, substrato, plantas e/ou peixes). ' +
-  'A foto é INVÁLIDA se: (1) mostrar apenas um peixe ou animal de perto sem o aquário; (2) não houver cena de aquário ' +
-  'de água doce; (3) mostrar pessoas, pets, insetos terrestres, plantas terrestres, comidas, mar ou água salgada; ' +
-  '(4) a imagem for borrada, escura demais ou recortada sem contexto do aquário. ' +
-  'Se tiver dúvida, responda valida false.';
-
 const PROMPT_COMPATIBILIDADE =
   'Você é um especialista em aquarismo de água doce. Avalie se um novo peixe pode ser introduzido com segurança em um aquário. ' +
   'Cruzando: (1) a compatibilidade do novo peixe com CADA peixe já existente no aquário (agressividade, territorialidade, ' +
@@ -318,26 +304,16 @@ const PROMPT_SUGESTOES =
 
 const PROMPT_SUGESTAO_AQUARIO =
   'Você é um especialista em aquarismo de água doce. O usuário está planejando um aquário NOVO e informou: ' +
-  '(1) o volume pretendido em litros, (2) o tipo de aquário (Comunitário, Jumbo, Espécie Única ou Hospital) e ' +
-  '(3) opcionalmente o tipo de fauna/biótopo desejado (amazônica, água negra, americana, asiática, africana, ' +
-  'australiana ou sem preferência) — siga as características do biótopo quando informado. ' +
-  'Com base nessas informações, monte uma sugestão completa e equilibrada. Regras OBRIGATÓRIAS: ' +
+  '(1) o volume pretendido em litros e (2) o tipo de aquário (Comunitário, Jumbo, Espécie Única ou Hospital). ' +
+  'Com base nessas duas informações, monte uma sugestão completa e equilibrada. Regras OBRIGATÓRIAS: ' +
   '(1) FAUNA: sugira espécies compatíveis entre si (sem predação, sem territorialidade severa, hábitos e dieta compatíveis) ' +
   'e em QUANTIDADE adequada ao volume (regra prática de até ~1 cm de peixe por litro para comunitário; menos para ' +
-  'espécies grandes, territoriais ou de água fria). ' +
-  'Para "Jumbo" priorize peixes de grande porte e VERIFIQUE se o volume é suficiente (um "Jumbo" exige no mínimo ' +
-  '~200-300 L; se o volume informado for menor, avise no campo "agua.nota" que o volume é pequeno para Jumbo e sugira ' +
-  'espécies compatíveis com o tamanho real). ' +
-  'Para "Espécie Única" sugira APENAS espécies de UM mesmo grupo/padrão (ex.: só ciclídeos, ou só americanos, ou só ' +
-  'barbos, ou só bettas, ou só guppies) — pode ser várias espécies do MESMO tipo (ex.: vários ciclídeos africanos), mas ' +
-  'nada de misturar grupos diferentes. ' +
-  'Para "Hospital" sugira pouca fauna resistente e de fácil manutenção (ex.: neon, rasbora) pensada para peixes que ' +
-  'estarão em tratamento/cuidados: aquário simples, sem substrato vivo, fácil de limpar e de observar; pode haver ' +
-  'medicamentos básicos na lista de equipamentos. ' +
+  'espécies grandes, territoriais ou de água fria). Para "Jumbo" priorize peixes de grande porte; para "Espécie Única" ' +
+  'sugira apenas 1 espécie (ex.: um ciclídeo de porte médio) na quantidade adequada; para "Hospital" sugira pouca ' +
+  'fauna resistente (ex.: neon, rasbora) e sem decoração viva. ' +
   '(2) FLORA: sugira plantas aquáticas compatíveis com o tipo e o tamanho do aquário (até 6 espécies), considerando ' +
-  'luz e se faz sentido para o tipo (para Hospital, sugira poucas ou nenhuma; para Jumbo priorize plantas de porte ' +
-  'maior; para biótopo africano, quase nenhuma). ' +
-  '(3) ÁGUA: sugira a faixa de pH ideal para o conjunto (ex.: 6,5 - 7,2) e a temperatura, coerentes com o biótopo/tipo. ' +
+  'luz e se faz sentido para o tipo (para Hospital, sugira poucas ou nenhuma). ' +
+  '(3) ÁGUA: sugira a faixa de pH ideal para o conjunto (ex.: 6,5 - 7,2) e a temperatura. ' +
   '(4) EQUIPAMENTOS: sugira equipamentos essenciais para o volume e o tipo (filtro e vazão L/h, aquecedor em watts ' +
   'quando fizer sentido, iluminação, bomba/oxigenação, substrato e, se for plantado, CO2 quando necessário). ' +
   'Responda APENAS com JSON válido no formato: ' +
@@ -500,7 +476,7 @@ async function buscarImagemWikipediaPorTermo(termo) {
     try {
       const url =
         `https://${idioma}.wikipedia.org/w/api.php?action=query&generator=search` +
-        `&gsrsearch=${encodeURIComponent(termo)}&gsrlimit=10&prop=pageimages|extracts` +
+        `&gsrsearch=${encodeURIComponent(termo)}&gsrlimit=8&prop=pageimages|extracts` +
         `&exintro&explaintext&piprop=name|original&format=json&origin=*`;
       const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
       if (!res.ok) continue;
@@ -513,32 +489,21 @@ async function buscarImagemWikipediaPorTermo(termo) {
       const ordenadas = lista
         .map((p) => ({ p, score: pontuarPaginaAquarismo(p, termo) }))
         .sort((a, b) => b.score - a.score);
+      const melhor = ordenadas[0];
+      if (melhor.score <= 0) continue;
 
-      // Pega a primeira página com foto real (raster), evitando mapas/vetores.
-      for (const { p } of ordenadas) {
-        if (p.score <= 0) continue;
-        if (p.pageimage && imagemReferenciaAceitavel('', p.pageimage)) {
-          const enc = encodeURIComponent(String(p.pageimage).replace(/ /g, '_'));
-          return `https://${idioma}.wikipedia.org/wiki/Special:FilePath/${enc}?width=480`;
-        }
-        if (p.original && p.original.source && imagemReferenciaAceitavel(p.original.source, '')) {
-          return p.original.source;
-        }
+      const pagina = melhor.p;
+      const nomeArquivo = pagina.pageimage || '';
+      if (nomeArquivo) {
+        const enc = encodeURIComponent(nomeArquivo.replace(/ /g, '_'));
+        return `https://${idioma}.wikipedia.org/wiki/Special:FilePath/${enc}?width=480`;
       }
+      if (pagina.original && pagina.original.source) return pagina.original.source;
     } catch (e) {
       console.warn(`[buscarImagemWikipedia ${idioma}]`, e.message);
     }
   }
   return '';
-}
-
-// Só aceita fotos reais: evita vetores (SVG) e imagens de mapa de distribuição.
-function imagemReferenciaAceitavel(url, nomeArquivo) {
-  const s = (String(url || '') + ' ' + String(nomeArquivo || '')).toLowerCase();
-  if (/\.svg(?:$|[?#])/.test(s)) return false;
-  if (/mapa?[-_.]?\.(?:jpe?g|png|gif|webp)(?:$|[?#])/.test(s)) return false;
-  if (/\.(?:jpe?g|png|gif|webp)(?:$|[?#])/.test(s)) return true;
-  return true;
 }
 
 async function comFoto(r) {
@@ -547,28 +512,6 @@ async function comFoto(r) {
     enriquecido.foto = await buscarImagemWikipedia(enriquecido.nomeCientifico || enriquecido.nomeComum || '');
   }
   return enriquecido;
-}
-
-// Gemini/OpenAI às vezes devolvem texto antes/depois do JSON mesmo com
-// responseMimeType/json_object. Extrai o objeto JSON de forma robusta.
-function extrairJSON(conteudo) {
-  const s = String(conteudo || '').trim();
-  if (!s) throw new Error('resposta vazia');
-  try {
-    return JSON.parse(s);
-  } catch (e) {
-    const ini = s.indexOf('{');
-    const fim = s.lastIndexOf('}');
-    if (ini !== -1 && fim > ini) {
-      const fatia = s.slice(ini, fim + 1);
-      try {
-        return JSON.parse(fatia);
-      } catch (e2) {
-        throw new Error(`resposta não é JSON válido: ${s.slice(0, 200)}`);
-      }
-    }
-    throw new Error(`resposta não é JSON válido: ${s.slice(0, 200)}`);
-  }
 }
 
 async function viaOpenAI(imagem) {
@@ -603,14 +546,14 @@ async function viaOpenAI(imagem) {
   const json = await res.json();
   const conteudo = json.choices?.[0]?.message?.content;
   if (!conteudo) throw new Error('OpenAI: resposta vazia');
-  const dados = extrairJSON(conteudo);
+  const dados = JSON.parse(conteudo);
   if (dados.tipo === 'invalido') throw new FotoInvalidaError(dados.motivo);
   if (dados.tipo === 'desconhecido') throw new Error('OpenAI: não reconheceu a imagem');
   return normalizarResultado({ provedor: 'OpenAI', ...dados });
 }
 
 async function viaGemini(base64, mime, textoExtra, sistemaPrompt) {
-  const modelo = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+  const modelo = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
   const system = sistemaPrompt || PROMPT_SISTEMA;
   const parts = [];
   if (base64) {
@@ -652,14 +595,14 @@ async function viaGemini(base64, mime, textoExtra, sistemaPrompt) {
     ?.map((p) => p.text || '')
     .join('');
   if (!conteudo) throw new Error('Gemini: resposta vazia');
-  const dados = extrairJSON(conteudo);
+  const dados = JSON.parse(conteudo);
   if (dados.tipo === 'invalido') throw new FotoInvalidaError(dados.motivo);
   if (dados.tipo === 'desconhecido') throw new Error('Gemini: não reconheceu a imagem');
   return normalizarResultado({ provedor: 'Gemini', ...dados });
 }
 
 async function validarFotoGemini(base64, mime, prompt) {
-  const modelo = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+  const modelo = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
     {
@@ -696,7 +639,7 @@ async function validarFotoGemini(base64, mime, prompt) {
     ?.map((p) => p.text || '')
     .join('');
   if (!conteudo) throw new Error('Gemini validação: resposta vazia');
-  const dados = extrairJSON(conteudo);
+  const dados = JSON.parse(conteudo);
   return { valida: !!dados.valida, motivo: dados.motivo || '' };
 }
 
@@ -731,7 +674,7 @@ async function validarFotoOpenAI(dataUrl, prompt) {
   const json = await res.json();
   const conteudo = json.choices?.[0]?.message?.content;
   if (!conteudo) throw new Error('OpenAI validação: resposta vazia');
-  const dados = extrairJSON(conteudo);
+  const dados = JSON.parse(conteudo);
   return { valida: !!dados.valida, motivo: dados.motivo || '' };
 }
 
@@ -1331,7 +1274,7 @@ app.post('/compatibilidade', async (req, res) => {
 
   if (process.env.GEMINI_API_KEY) {
     try {
-      const modelo = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+      const modelo = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
       const resIA = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
         {
@@ -1449,7 +1392,7 @@ app.post('/sugestoes', async (req, res) => {
 
   if (process.env.GEMINI_API_KEY) {
     try {
-      const modelo = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+      const modelo = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
       const resIA = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
         {
@@ -1526,7 +1469,7 @@ app.post('/sugestoes', async (req, res) => {
 });
 
 app.post('/sugestao-aquario', async (req, res) => {
-  const { litros, tipo, tipoFauna } = req.body || {};
+  const { litros, tipo } = req.body || {};
   const volume = parseFloat(String(litros || '').replace(',', '.'));
   if (!volume || volume <= 0) {
     return res.status(400).json({ erro: 'Informe o volume pretendido em litros.' });
@@ -1534,69 +1477,11 @@ app.post('/sugestao-aquario', async (req, res) => {
   const tiposValidos = ['Comunitário', 'Jumbo', 'Espécie Única', 'Hospital'];
   const tipoAquario = tiposValidos.includes(tipo) ? tipo : 'Comunitário';
 
-  // Biótopos de água doce: orientação para a IA escolher a fauna correta.
-  const BIOTOPOS = {
-    amazonica:
-      'Amazônico: água ácida e muito mole, temperatura quente, rica em troncos. ' +
-      'Fauna típica: discos, acarás-bandeira, neons, coridoras, cascudos. ' +
-      'Flora: Echinodorus (amazonenses) e Vallisneria.',
-    'agua-negra':
-      'Água negra (blackwater, afluentes do Rio Negro): água muito escura (cor de chá) por taninos de folhas e troncos, iluminação muito baixa. ' +
-      'Fauna típica: neons, tetras e ciclídeos anões (Apistogramma).',
-    americana:
-      'Americana (rios de correnteza e lagos da América Central): água alcalina e dura, decoração de rochas e poucos troncos. ' +
-      'Fauna típica: ciclídeos de médio e grande porte (Jack Dempsey, boca de fogo) e vivíparos (guppys, plati, molinésias).',
-    asiatica:
-      'Asiática (rios e pântanos do Sudeste Asiático): água levemente ácida a neutra, fluxo lento ou estagnado, vegetação abundante. ' +
-      'Fauna típica: bettas, gouramis, rasboras e danios. ' +
-      'Flora: Cryptocorynes, higrófilas e samambaias de Java. ' +
-      '(Há também a variação de correnteza/hillstream: água fria, muito oxigenada, correnteza forte; cobrinhas kuhli e peixes-ventosa.)',
-    africana:
-      'Africana (grandes lagos do Rift — Malawi, Tanganyika e Victoria): água muito alcalina e muito dura, decoração de rochas empilhadas, quase sem troncos. ' +
-      'Fauna típica: ciclídeos africanos coloridos e territoriais (mbunas do Malawi). ' +
-      'Flora: quase inexistente (apenas Anúbias resistentes). ' +
-      '(Rios do oeste africano: água ácida a neutra, troncos e vegetação; kribensis e peixes-elefante.)',
-    australiana:
-      'Australiana/Papua Nova Guiné: água neutra a levemente alcalina, vegetação esparsa, boa iluminação. ' +
-      'Fauna típica: peixes-arco-íris (rainbowfish).',
-    primitiva:
-      'Peixes primitivos (fósseis vivos): espécies que preservam características morfológicas de milhões de anos, ' +
-      'como escamas ganoides pesadas ou respiração aérea. Ex.: Polypterus (bichir), Aruanã (Osteoglossum bicirrhosum), ' +
-      'Peixe-Corda (Erpetoichthys calabaricus) e Lepisosteus (peixe-gator/gar). ' +
-      'São peixes de fundo ou superfície, muito resistentes, mas exigem aquários GRANDES (300 L+), totalmente TAMPADOS ' +
-      '(são saltadores/rastejadores natos), filtragem potente (Sump ou Canister superdimensionado — geram muita amônia) e ' +
-      'decoração segura (troncos lisos, areia fina, sem rochas pontiagudas).',
-    exotica:
-      'Peixes exóticos (formatos e comportamentos incomuns): espécies com anatomia fora do padrão. ' +
-      'Ex.: Peixe-Faca-Palhaço (Chitala ornata, nada para trás com a nadadeira anal), Datnoid/Peixe-Tigre (listras pretas, ' +
-      'boca retrátil agressiva), Peixe-Elefante (Gnathonemus petersii, com tromba elétrica, areia fina no fundo) e ' +
-      'Peixe-Borboleta Africano (Pantodon buchholzi, habita a superfície, pode ficar em ~100 L). ' +
-      'Exigem atenção ao tamanho adulto, tampas (saltadores) e substrato adequado.',
-    nanofauna:
-      'Nano aquário (5 a 40 L): ecossistema miniaturizado, fauna MINIMALISTA e de baixa carga orgânica. ' +
-      'Invertebrados: camarões ornamentais (Neocaridinas Red Cherry) e caramujos pequenos (Planorbis). ' +
-      'Peixes solitários: 1 Betta ou Peixe-Paraíso (acima de 20 L). Micro-cardumes (5-6): Tetras Neon, Rasboras Nano, ' +
-      'Guppys Endler ou limpa-vidros (a partir de 30 L). Flora de baixo porte: musgos (Java, Christmas), Anubias Nana, ' +
-      'Bucephalandras e plantas de carpete (Elenocharis). Destaque: estabilidade difícil (pouca diluição), evaporação rápida; ' +
-      'use equipamentos compactos e reposição com água deionizada/destilada.',
-    invertebrados:
-      'Invertebrados e outros animais exóticos: alternativa fora dos peixes tradicionais. ' +
-      'Ex.: Mini Arraia de Rio (Gastromyzon — peixe comedor de algas de corredeiras com formato achatado que imita arraia), ' +
-      'Camarão Sossego/Filtrador (Atya gabonensis — grande, azulado, sem garras, filtra partículas com leques nas patas) e ' +
-      'Ampulárias Gigantes (moluscos ativos, ajudam na limpeza e "escalam" os vidros). ' +
-      'Oriente a fauna para invertebrados (camarões, caramujos, moluscos) e peixes pequenos e pacíficos compatíveis.',
-  };
-
-  const biotopoTexto = BIOTOPOS[tipoFauna]
-    ? `\nTipo de fauna / biótopo: ${BIOTOPOS[tipoFauna]}`
-    : '';
-
   const pergunta =
-    `Volume pretendido: ${volume} L.\nTipo de aquário: ${tipoAquario}.` +
-    biotopoTexto +
-    `\nMonte a sugestão completa de fauna, flora, água e equipamentos para este aquário novo.`;
+    `Volume pretendido: ${volume} L.\nTipo de aquário: ${tipoAquario}.\n` +
+    `Monte a sugestão completa de fauna, flora, água e equipamentos para este aquário novo.`;
 
-  console.log(`[sugestao-aquario] litros=${volume} | tipo=${tipoAquario} | fauna=${tipoFauna || 'sem'}`);
+  console.log(`[sugestao-aquario] litros=${volume} | tipo=${tipoAquario}`);
 
   try {
     const dados = await viaIAVision({
@@ -1607,7 +1492,6 @@ app.post('/sugestao-aquario', async (req, res) => {
     return res.json({
       litros: volume,
       tipo: tipoAquario,
-      tipoFauna: tipoFauna || 'sem',
       fauna: Array.isArray(dados.fauna) ? dados.fauna : [],
       flora: Array.isArray(dados.flora) ? dados.flora : [],
       agua: dados.agua || {},
@@ -1997,7 +1881,7 @@ async function diagnosticarComIA(imagem, estoqueMedicamentos, descricao, faunaSe
       if (base64) parts.push({ inline_data: { mime_type: prefixo, data: base64 } });
       parts.push({ text: userText });
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_MODEL || 'gemini-3.5-flash'}:generateContent`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_MODEL || 'gemini-2.5-flash'}:generateContent`,
         {
           method: 'POST',
           signal: AbortSignal.timeout(AI_TIMEOUT_MS),
@@ -2087,7 +1971,7 @@ async function viaIAVision({ imagem, systemPrompt, userText }) {
 
   if (process.env.GEMINI_API_KEY) {
     try {
-      const modelo = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+      const modelo = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
       const parts = [];
       if (base64 && prefixo) parts.push({ inline_data: { mime_type: prefixo, data: base64 } });
       parts.push({ text: userText });
@@ -2199,7 +2083,7 @@ async function gerarCronogramaComIA(pergunta) {
 
   if (process.env.GEMINI_API_KEY) {
     try {
-      const modelo = process.env.GEMINI_MODEL || 'gemini-3.5-flash';
+      const modelo = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
       const resIA = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
         {
@@ -2494,6 +2378,7 @@ const CONCURSOS_UPLOADS_DIR = path.join(__dirname, 'public', 'concursos');
 if (!fs.existsSync(CONCURSOS_UPLOADS_DIR)) {
   fs.mkdirSync(CONCURSOS_UPLOADS_DIR, { recursive: true });
 }
+
 // Estado público: se o admin não ativou, retorna null (a seção não aparece no app).
 app.get('/concursos', (req, res) => {
   const config = concursosStore.obterConfig();
@@ -2501,56 +2386,34 @@ app.get('/concursos', (req, res) => {
     return res.json({ ativo: false, config: null });
   }
   const agora = Date.now();
-  let fase =
-    agora < config.inscricaoDe
-      ? 'aguarda_inscricao'
-      : agora >= config.inscricaoDe && (!config.inscricaoAte || agora < config.inscricaoAte)
+  const fase =
+    agora < config.inscricaoAte
       ? 'inscricoes'
-      : agora < config.votacaoDe
-      ? 'aguarda_votacao'
-      : config.votacaoAte && agora >= config.votacaoAte
-      ? 'encerrado'
-      : 'votacao';
-  // Vencedor declarado → concurso "finalizado": todos veem o anúncio do vencedor.
-  const ganhador = concursosStore.obterGanhador();
-  if (ganhador) fase = 'finalizado';
-  // Link de votação: usa o configurado ou gera automaticamente.
-  const linkBase = `${urlBasePublica(req).replace(/\/$/, '')}/concurso/votacao`;
-  const linkVotacao = String(config.linkVotacao || '').trim() || linkBase;
-  // Na votação só aparecem inscrições APROVADAS pelo admin.
-  const inscricoes = concursosStore
-    .listarInscricoes()
-    .filter((i) => i.status === 'aprovado')
-    .map((i) => ({
-      id: i.id,
-      nome: i.nome || '',
-      apelido: i.apelido || '',
-      foto: i.foto || '',
-      votos: i.votos || 0,
-      // Link público da enquete com a foto do participante em destaque.
-      linkVoto: `${linkBase}?votar=${i.id}`,
-    }));
-  // Status do dispositivo que está consultando (para o app mostrar "inscrito").
-  const dispositivoId = String((req.query && req.query.dispositivoId) || '').trim();
-  const meuStatus = dispositivoId ? concursosStore.statusDeDispositivo(dispositivoId) : null;
+      : agora < config.votacaoAte
+      ? 'votacao'
+      : 'encerrado';
+  const ganhador = fase === 'encerrado' ? concursosStore.obterGanhador() : null;
+  const inscricoes = concursosStore.listarInscricoes().map((i) => ({
+    id: i.id,
+    nome: i.nome || '',
+    apelido: i.apelido || '',
+    foto: i.foto || '',
+    votos: i.votos || 0,
+  }));
   res.json({
     ativo: true,
     config: {
       categoria: config.categoria || '',
-      regra: config.regra || '',
       premio: config.premio || '',
-      patrocinador: config.patrocinador || '',
-      url: config.url || '',
       inscricaoDe: config.inscricaoDe || 0,
       inscricaoAte: config.inscricaoAte || 0,
       votacaoDe: config.votacaoDe || 0,
       votacaoAte: config.votacaoAte || 0,
-      linkVotacao,
+      linkVotacao: config.linkVotacao || '',
       ganhadorDeclarado: !!config.ganhadorDeclarado,
     },
     fase,
     inscricoes,
-    meuStatus,
     ganhador: ganhador
       ? {
           inscricaoId: ganhador.inscricaoId,
@@ -2565,11 +2428,6 @@ app.get('/concursos', (req, res) => {
   });
 });
 
-// Serve as fotos das inscrições (e a página de votação). Registrado depois
-// das rotas JSON para que GET /concursos (exato) caia na rota e os arquivos
-// /concursos/<arquivo> sejam servidos da pasta pública.
-app.use('/concursos', express.static(CONCURSOS_UPLOADS_DIR, { maxAge: '1d' }));
-
 // Config + inscrições completas (painel do admin).
 app.get('/concursos/admin', (req, res) => {
   if (!exigirAdmin(req, res)) return;
@@ -2577,7 +2435,6 @@ app.get('/concursos/admin', (req, res) => {
     config: concursosStore.obterConfig(),
     inscricoes: concursosStore.listarInscricoes(),
     ganhador: concursosStore.obterGanhador(),
-    historico: concursosStore.obterHistorico(),
   });
 });
 
@@ -2587,10 +2444,7 @@ app.put('/concursos/config', (req, res) => {
   const config = {
     ativo: c.ativo !== false,
     categoria: String(c.categoria || '').trim(),
-    regra: String(c.regra || '').trim(),
     premio: String(c.premio || '').trim(),
-    patrocinador: String(c.patrocinador || '').trim(),
-    url: String(c.url || '').trim(),
     inscricaoDe: Number(c.inscricaoDe) || 0,
     inscricaoAte: Number(c.inscricaoAte) || 0,
     votacaoDe: Number(c.votacaoDe) || 0,
@@ -2602,38 +2456,29 @@ app.put('/concursos/config', (req, res) => {
   res.json({ ok: true, config });
 });
 
-// Envio de inscrição com foto. A foto é validada (só aquários de água doce) e
-// exige confirmação de propriedade. A inscrição entra como "pendente" e só
-// participa da votação depois que o admin aprovar.
+// Envio de inscrição com foto. A foto é validada (só peixes/aquários) e salva
+// de forma IMUTÁVEL (não há edição nem exclusão depois).
 app.post('/concursos/inscricao', async (req, res) => {
   const config = concursosStore.obterConfig();
   if (!config || config.ativo !== true) {
     return res.status(400).json({ erro: 'O concurso não está ativo.' });
   }
   const agora = Date.now();
-  if (agora < config.inscricaoDe || (config.inscricaoAte && agora > config.inscricaoAte)) {
+  if (agora < config.inscricaoDe || agora > config.inscricaoAte) {
     return res.status(400).json({ erro: 'As inscrições não estão abertas neste momento.' });
   }
-  const { imagem, nome, apelido, consentimento, dispositivoId } = req.body || {};
+  const { imagem, nome, apelido, dispositivoId } = req.body || {};
   if (!imagem || typeof imagem !== 'string') {
     return res.status(400).json({ erro: 'Envie a foto do aquário (imagem).' });
   }
-  if (!String(nome || '').trim()) {
-    return res.status(400).json({ erro: 'Informe o nome do participante.' });
+  if (!String(nome || '').trim() || !String(apelido || '').trim()) {
+    return res.status(400).json({ erro: 'Informe nome e apelido.' });
   }
-  if (consentimento !== true) {
-    return res.status(400).json({
-      codigo: 'CONSENTIMENTO_OBRIGATORIO',
-      erro: 'Confirme que a foto enviada é de um aquário de sua propriedade.',
-    });
-  }
-  // Uma inscrição por dispositivo. Se a anterior foi REJEITADA e ainda está no
-  // período de inscrições, o usuário pode reenviar outra foto (substitui a antiga
-  // e volta para "em avaliação").
-  const dispositivoNorm = String(dispositivoId || '').trim();
-  const inscricaoAnterior =
-    concursosStore.listarInscricoes().find((i) => String(i.dispositivoId || '') === dispositivoNorm) || null;
-  if (inscricaoAnterior && inscricaoAnterior.status !== 'rejeitado') {
+  // Uma inscrição por dispositivo.
+  const jaInscrito = concursosStore
+    .listarInscricoes()
+    .some((i) => String(i.dispositivoId || '') === String(dispositivoId || ''));
+  if (jaInscrito) {
     return res.status(400).json({ erro: 'JÁ_INSCRITO', motivo: 'Este dispositivo já enviou uma foto para o concurso.' });
   }
 
@@ -2641,31 +2486,33 @@ app.post('/concursos/inscricao', async (req, res) => {
   const prefixo = imagem.match(/^data:([^;]+);base64,/) ? imagem.match(/^data:([^;]+);base64,/)[1] : 'image/jpeg';
   const dataUrl = `data:${prefixo};base64,${base64}`;
 
-  // Validação: só fotos do AQUÁRIO INTEIRO (concurso). Os provedores de IA rodam
-  // em paralelo para responder rápido — se qualquer um aprovar, a foto passa.
+  // Validação: só fotos de peixes/aquários.
   const provedores = semChavesValidacao();
   let valida = false;
   let motivo = '';
   if (provedores.length > 0) {
-    const tentativas = [];
-    if (process.env.GEMINI_API_KEY) tentativas.push(validarFotoGemini(base64, prefixo, PROMPT_VALIDACAO_CONCURSO));
-    if (process.env.OPENAI_API_KEY) tentativas.push(validarFotoOpenAI(dataUrl, PROMPT_VALIDACAO_CONCURSO));
-    const resultados = await Promise.allSettled(tentativas);
-    for (const r of resultados) {
-      if (r.status === 'fulfilled') {
-        if (r.value.valida) {
-          valida = true;
-          break;
-        }
-        if (!motivo) motivo = r.value.motivo || '';
-      } else {
-        console.error('Falha validação (concurso):', r.reason?.message);
+    if (process.env.GEMINI_API_KEY) {
+      try {
+        const r = await validarFotoGemini(base64, prefixo, PROMPT_VALIDACAO_AQUARIO);
+        valida = r.valida;
+        motivo = r.motivo || '';
+      } catch (e) {
+        console.error('Falha Gemini (concurso):', e.message);
+      }
+    }
+    if (!valida && process.env.OPENAI_API_KEY) {
+      try {
+        const r = await validarFotoOpenAI(dataUrl, PROMPT_VALIDACAO_AQUARIO);
+        valida = r.valida;
+        motivo = r.motivo || '';
+      } catch (e) {
+        console.error('Falha OpenAI (concurso):', e.message);
       }
     }
     if (!valida) {
       return res.status(422).json({
         codigo: 'foto_invalida',
-        erro: motivo || 'A foto precisa mostrar o aquário inteiro em cena, não apenas um peixe.',
+        erro: motivo || 'A foto precisa mostrar um peixe de água doce ou um aquário.',
       });
     }
   }
@@ -2680,36 +2527,13 @@ app.post('/concursos/inscricao', async (req, res) => {
   }
   const fotoUrl = `${urlBasePublica(req).replace(/\/$/, '')}/concursos/${nomeArquivo}`;
 
-  const nomeParticipante = String(nome).trim();
-  let inscricao;
-  if (inscricaoAnterior) {
-    // Reenvio: apaga a foto antiga, grava a nova e volta para "em avaliação".
-    const arquivoAntigo = String(inscricaoAnterior.foto || '').split('/').pop();
-    if (arquivoAntigo && /^concurso-.*\.\w+$/.test(arquivoAntigo)) {
-      try {
-        fs.unlinkSync(path.join(CONCURSOS_UPLOADS_DIR, arquivoAntigo));
-      } catch (e) {
-        console.warn('Falha ao remover foto antiga do concurso:', e.message);
-      }
-    }
-    inscricao = concursosStore.atualizarInscricao(inscricaoAnterior.id, {
-      foto: fotoUrl,
-      status: 'pendente',
-      criadoEm: Date.now(),
-      motivo: '',
-      rejeitadoEm: 0,
-    });
-  } else {
-    inscricao = concursosStore.criarInscricao({
-      nome: nomeParticipante,
-      apelido: String(apelido || '').trim() || nomeParticipante,
-      dispositivoId: dispositivoNorm,
-      foto: fotoUrl,
-      consentimento: true,
-      status: 'pendente',
-    });
-  }
-  res.status(201).json({ ok: true, inscricao: { id: inscricao.id, foto: inscricao.foto, status: 'pendente' } });
+  const inscricao = concursosStore.criarInscricao({
+    nome: String(nome).trim(),
+    apelido: String(apelido).trim(),
+    dispositivoId: String(dispositivoId || ''),
+    foto: fotoUrl,
+  });
+  res.status(201).json({ ok: true, inscricao: { id: inscricao.id, foto: inscricao.foto } });
 });
 
 // Votação: 1 voto por dispositivo.
@@ -2719,7 +2543,7 @@ app.post('/concursos/votar', (req, res) => {
     return res.status(400).json({ erro: 'O concurso não está ativo.' });
   }
   const agora = Date.now();
-  if (agora < config.votacaoDe || (config.votacaoAte && agora > config.votacaoAte)) {
+  if (agora < config.votacaoDe || agora > config.votacaoAte) {
     return res.status(400).json({ erro: 'A votação não está aberta neste momento.' });
   }
   const { inscricaoId, dispositivoId } = req.body || {};
@@ -2742,206 +2566,36 @@ app.post('/concursos/ganhador', (req, res) => {
   res.json({ ok: true, ganhador: g });
 });
 
-// Admin encerra o concurso: apaga as fotos e guarda apenas a memória da
-// categoria + vencedor. Tudo volta ao normal para os usuários (banner some).
-app.post('/concursos/encerrar', (req, res) => {
-  if (!exigirAdmin(req, res)) return;
-  const config = concursosStore.obterConfig() || {};
-  const inscricoes = concursosStore.listarInscricoes();
-  const ganhador = concursosStore.obterGanhador();
-  for (const i of inscricoes) {
-    const arquivo = String(i.foto || '').split('/').pop();
-    if (arquivo && /^concurso-.*\.\w+$/.test(arquivo)) {
-      try {
-        fs.unlinkSync(path.join(CONCURSOS_UPLOADS_DIR, arquivo));
-      } catch (e) {
-        console.warn('Falha ao apagar foto ao encerrar concurso:', e.message);
-      }
-    }
-  }
-  const historico = concursosStore.encerrarConcurso({
-    categoria: config.categoria || '',
-    premio: config.premio || '',
-    encerradoEm: Date.now(),
-    ganhador: ganhador
-      ? {
-          nome: ganhador.inscricao.nome || '',
-          apelido: ganhador.inscricao.apelido || '',
-          votos: ganhador.inscricao.votos || 0,
-          premio: config.premio || '',
-        }
-      : null,
-  });
-  res.json({ ok: true, historico });
-});
-
-// Lê a foto da inscrição (arquivo em CONCURSOS_UPLOADS_DIR) e a devolve como
-// data URL. Isso deixa a página de exportação auto-contida (funciona até com o
-// CSP do helmet, que só permite img-src 'self' data: https:).
-function fotoParaDataUrl(url) {
-  if (!url) return '';
-  const arquivo = String(url).split('/').pop();
-  if (!arquivo || !/^concurso-.*\.\w+$/.test(arquivo)) return url;
-  try {
-    const buf = fs.readFileSync(path.join(CONCURSOS_UPLOADS_DIR, arquivo));
-    const mime = /\.png$/i.test(arquivo)
-      ? 'image/png'
-      : /\.webp$/i.test(arquivo)
-      ? 'image/webp'
-      : /\.gif$/i.test(arquivo)
-      ? 'image/gif'
-      : 'image/jpeg';
-    return `data:${mime};base64,${buf.toString('base64')}`;
-  } catch (e) {
-    console.warn('Falha ao ler foto para exportação:', e.message);
-    return url;
-  }
-}
-
-// Registro das fotos aprovadas para a votação (exportação). Abre uma página
-// com todas as fotos aprovadas (nome + votos), pronta para imprimir/salvar.
-app.get('/concursos/admin/exportar-votacao', (req, res) => {
-  const chave = req.get('X-Admin-Key') || String((req.query && req.query.chave) || '');
-  if (!chave || chave !== ADMIN_KEY) {
-    return res.status(401).send('Chave de administração inválida.');
-  }
-  const config = concursosStore.obterConfig() || {};
-  const ganhador = concursosStore.obterGanhador();
-  const inscricoes = concursosStore
-    .listarInscricoes()
-    .filter((i) => i.status === 'aprovado')
-    .sort((a, b) => (b.votos || 0) - (a.votos || 0));
-  const cards = inscricoes
-    .map((i) => {
-      const src = i.foto ? fotoParaDataUrl(i.foto) : '';
-      return `
-      <div class="card">
-        ${src ? `<img src="${src}" alt="Foto do participante" />` : ''}
-        <div class="card-body">
-          <p class="card-name">${(i.nome || '').replace(/</g, '&lt;')}${i.apelido && i.apelido !== i.nome ? ` <span class="apelido">@${(i.apelido || '').replace(/</g, '&lt;')}</span>` : ''}</p>
-          <p class="card-votos">${i.votos || 0} votos</p>
-        </div>
-      </div>`;
-    })
-    .join('');
-  const ganhadorHtml = ganhador
-    ? `
-      <div class="ganhador">
-        <div class="ganhador-titulo">🏆 VENCEDOR</div>
-        ${fotoParaDataUrl(ganhador.inscricao.foto) ? `<img src="${fotoParaDataUrl(ganhador.inscricao.foto)}" alt="Vencedor" />` : ''}
-        <div class="ganhador-nome">${(ganhador.inscricao.nome || '').replace(/</g, '&lt;')}</div>
-        <div class="ganhador-votos">${ganhador.inscricao.votos || 0} votos</div>
-      </div>`
-    : '';
-  const html = `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Registro de Votação — ${(config.categoria || 'Concurso').replace(/</g, '&lt;')}</title>
-<style>
-  * { box-sizing: border-box; }
-  body { margin: 0; padding: 20px; font-family: system-ui, sans-serif; background: #f4f7fb; color: #10243d; }
-  .topo { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
-  h1 { font-size: 20px; margin: 0; }
-  .sub { color: #5b7a99; font-size: 13px; margin: 2px 0 0; }
-  .acoes { display: flex; gap: 8px; }
-  button { background: #0b2e4f; color: #fff; border: none; border-radius: 8px; padding: 9px 16px; font-weight: 800; cursor: pointer; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
-  .card { background: #fff; border: 1px solid #c7d9ea; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(16,36,61,0.08); }
-  .card img { width: 100%; height: 160px; object-fit: cover; display: block; }
-  .card-body { padding: 8px 10px; }
-  .card-name { margin: 0; font-weight: 800; font-size: 14px; }
-  .apelido { color: #0b2e4f; font-weight: 700; font-size: 12px; }
-  .card-votos { margin: 2px 0 0; color: #5b7a99; font-size: 12px; }
-  .ganhador { background: #fff7e6; border: 2px solid #FFC857; border-radius: 12px; padding: 14px; text-align: center; margin-bottom: 14px; }
-  .ganhador-titulo { font-weight: 900; color: #d98324; }
-  .ganhador img { max-width: 320px; width: 100%; border-radius: 10px; margin: 8px 0; }
-  .ganhador-nome { font-size: 20px; font-weight: 900; }
-  .ganhador-votos { color: #5b7a99; font-size: 13px; }
-  .vazio { color: #5b7a99; font-size: 13px; }
-  @media print { .acoes { display: none; } button { display: none; } body { background: #fff; } }
-</style>
-</head>
-<body>
-  <div class="topo">
-    <div>
-      <h1>📸 Registro de Votação — ${(config.categoria || 'Concurso').replace(/</g, '&lt;')}</h1>
-      <p class="sub">${config.premio ? `Prêmio: ${(config.premio || '').replace(/</g, '&lt;')}` : ''} · Emitido em ${new Date().toLocaleString('pt-BR')}</p>
-    </div>
-    <div class="acoes"><button onclick="window.print()">🖨️ Imprimir / Salvar PDF</button></div>
-  </div>
-  ${ganhadorHtml}
-  <h2>Fotos aprovadas (${inscricoes.length})</h2>
-  ${inscricoes.length === 0 ? '<p class="vazio">Nenhuma foto aprovada.</p>' : `<div class="grid">${cards}</div>`}
-</body>
-</html>`;
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.send(html);
-});
-
-// ============ MODERAÇÃO DE INSCRIÇÕES (admin) ============
-// O admin revisa cada inscrição antes da votação. Só inscrições "aprovadas"
-// aparecem no app e no link público de votação.
-
-// Aprova uma inscrição (está dentro das regras → participa da votação).
-app.post('/concursos/aprovar', (req, res) => {
-  if (!exigirAdmin(req, res)) return;
-  const { inscricaoId } = req.body || {};
-  const inscricao = concursosStore.atualizarInscricao(inscricaoId, { status: 'aprovado' });
-  if (!inscricao) return res.status(404).json({ erro: 'Inscrição não encontrada.' });
-  res.json({ ok: true, inscricao });
-});
-
-// Rejeita uma inscrição (não segue as regras → não aparece na votação).
-// O motivo é gravado e enviado ao participante pelo app.
-app.post('/concursos/rejeitar', (req, res) => {
-  if (!exigirAdmin(req, res)) return;
-  const { inscricaoId, motivo } = req.body || {};
-  const inscricao = concursosStore.atualizarInscricao(inscricaoId, {
-    status: 'rejeitado',
-    motivo: String(motivo || '').trim(),
-    rejeitadoEm: Date.now(),
-  });
-  if (!inscricao) return res.status(404).json({ erro: 'Inscrição não encontrada.' });
-  res.json({ ok: true, inscricao });
-});
-
-// Remove por completo uma inscrição (ex.: conteúdo impróprio).
-app.delete('/concursos/inscricao/:id', (req, res) => {
-  if (!exigirAdmin(req, res)) return;
-  const removido = concursosStore.removerInscricao(req.params.id);
-  if (!removido) return res.status(404).json({ erro: 'Inscrição não encontrada.' });
-  res.json({ ok: true });
-});
-
 // ============================ FIM CONCURSOS ============================
 
 // ============================ TELEMETRIA ============================
 
 // Recebe um evento de uso de seção (ex.: usuário abriu o Identificador).
 app.post('/telemetria/secao', (req, res) => {
-  const { secao } = req.body || {};
+  const { secao, plano } = req.body || {};
   const nome = String(secao || '').trim();
   if (!nome) return res.status(400).json({ erro: 'Envie o campo "secao".' });
-  telemetriaStore.registrarSecao(nome.slice(0, 60));
+  telemetriaStore.registrarSecao(nome.slice(0, 60), plano);
   res.json({ ok: true });
 });
 
 // Recebe o perfil de um aquário cadastrado/atualizado (para estatísticas).
 app.post('/telemetria/aquario', (req, res) => {
-  const { aquario } = req.body || {};
+  const { aquario, plano } = req.body || {};
   if (!aquario || typeof aquario !== 'object') {
     return res.status(400).json({ erro: 'Envie o campo "aquario".' });
   }
-  telemetriaStore.registrarPerfilAquario(aquario);
+  telemetriaStore.registrarPerfilAquario(aquario, plano);
   res.json({ ok: true });
 });
 
 // Resumo estatístico (painel do admin).
 app.get('/telemetria/admin', (req, res) => {
   if (!exigirAdmin(req, res)) return;
-  res.json(telemetriaStore.resumo());
+  const plano = String(req.query.plano || '');
+  const de = req.query.de ? Number(req.query.de) : null;
+  const ate = req.query.ate ? Number(req.query.ate) : null;
+  res.json(telemetriaStore.resumo({ plano, de, ate }));
 });
 
 // ============================ FIM TELEMETRIA ============================
@@ -3149,8 +2803,8 @@ app.post('/pergunta', async (req, res) => {
   if (texto.length < 4) {
     return res.status(400).json({ erro: 'Escreva uma pergunta (mínimo 4 caracteres).' });
   }
-  if (texto.length > 1000) {
-    return res.status(400).json({ erro: 'A pergunta deve ter no máximo 1000 caracteres.' });
+  if (texto.length > 200) {
+    return res.status(400).json({ erro: 'A pergunta deve ter no máximo 200 caracteres.' });
   }
 
   try {
@@ -3212,162 +2866,7 @@ app.get('/admin-ofertas', (req, res) => {
 
 // ============================ TESTER (limite de testadores) ============================
 // O app consulta esta rota no boot (ambiente tester) para validar o acesso:
-//  - acesso ILIMITADO (quem recebeu o link entra; não há limite de vagas);
-//  - expira em testerStore.EXPIRA_EM (30/09/2026) mesmo que esqueçam de tirar o link do ar.
-
-// ============================ ALIMENTOS RECOMENDADOS ============================
-// Recomenda alimentos da fauna cadastrada, usando IA com fallback local.
-const PROMPT_ALIMENTOS_RECOMENDADOS =
-  'Você é um especialista em rações e alimentos para peixes ornamentais e aquários de água doce. ' +
-  'O usuário informou a fauna do aquário. Recomende até 4 produtos de alimentação adequados para essa fauna. ' +
-  'Responda APENAS com JSON válido no formato: ' +
-  '{"recomendacoes":[{"marca":"marca do produto","nome":"nome comercial","tipo":"formato (flocos, grânulos, pellets, etc.)",' +
-  '"indicacao":"para quais peixes/espécies o produto é indicado","motivo":"motivo curto e específico da recomendação"}]}. ' +
-  'Se a fauna estiver vazia, responda {"recomendacoes":[]}. Não invente produtos inexistentes.';
-
-function recomendacoesAlimentosLocais(fauna) {
-  const produtos = catalogosStore.listar('produtos');
-  const alimentos = (produtos || []).filter((p) => (p.categoria || '') === 'alimentos');
-  const dietas = String(
-    (fauna || [])
-      .map((f) => `${f.dieta || ''} ${f.nomeComum || f.nome || ''}`.trim())
-      .filter(Boolean)
-      .join(' ')
-  )
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-  if (!alimentos.length) return [];
-  const vistos = new Set();
-  const recomendacoes = alimentos
-    .map((p) => {
-      const alvo = `${p.nome || ''} ${p.marca || ''} ${p.tipo || ''} ${p.indicacao || ''} ${(p.palavrasChave || []).join(' ')}`
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '');
-      let score = 0;
-      for (const token of dietas.split(/\s+/).filter((t) => t.length >= 4)) {
-        if (alvo.includes(token)) score += 1;
-      }
-      if (dietas.includes('carnivor') && alvo.includes('carnivor')) score += 3;
-      if (dietas.includes('herbivor') && (alvo.includes('herbivor') || alvo.includes('espirulina'))) score += 3;
-      if (dietas.includes('onivor') && alvo.includes('comunitario')) score += 2;
-      return { p, score };
-    })
-    .filter((r) => r.score > 0)
-    .sort((a, b) => b.score - a.score)
-    .map((r) => r.p);
-  for (const p of recomendacoes) {
-    const chave = `${p.marca || ''}-${p.nome || ''}`.toLowerCase();
-    if (vistos.has(chave)) continue;
-    vistos.add(chave);
-  }
-  const unicas = recomendacoes.filter((p) => {
-    const chave = `${p.marca || ''}-${p.nome || ''}`.toLowerCase();
-    if (vistos.has(chave)) return false;
-    vistos.add(chave);
-    return true;
-  });
-  return unicas.slice(0, 4).map((p) => ({
-    marca: p.marca || '',
-    nome: p.nome || '',
-    tipo: p.tipo || '',
-    indicacao: p.indicacao || '',
-    motivo: p.indicacao ? `Adequado para a dieta da fauna: ${p.indicacao}.` : 'Alimento de rotina adequado para peixes de aquário comunitário.',
-  }));
-}
-
-app.post('/alimentos-recomendados', async (req, res) => {
-  const { fauna } = req.body || {};
-  try {
-    const lista = (fauna || []).map((f) => `${f.nomeComum || f.nome || 'peixe'} (${f.dieta || 'dieta não informada'})`).join(', ');
-    const userText = lista
-      ? `Fauna do aquário: ${lista}. Recomende alimentos adequados.`
-      : 'A fauna está vazia. Recomende alimentos de rotina para aquário comunitário.';
-    const dados = await viaIAVision({
-      imagem: null,
-      systemPrompt: PROMPT_ALIMENTOS_RECOMENDADOS,
-      userText,
-    });
-    if (dados && Array.isArray(dados.recomendacoes)) {
-      return res.json({
-        recomendacoes: dados.recomendacoes.slice(0, 6),
-        provedor: dados.provedor || 'IA',
-      });
-    }
-  } catch (e) {
-    console.error('Falha ao recomendar alimentos (IA):', e.message);
-  }
-  const recomendacoes = recomendacoesAlimentosLocais(fauna);
-  return res.json({ recomendacoes, provedor: 'local', offline: true });
-});
-
-// ============================ SUGESTÕES DE AJUSTE ============================
-// Sugestões de ajuste de parâmetros da água em alerta/perigo, com IA + fallback local.
-const PROMPT_SUGESTOES_AJUSTE =
-  'Você é um consultor de aquarismo de água doce. O usuário está com parâmetros da água em alerta ou perigo ' +
-  'e precisa de sugestões práticas de ajuste. Analise os parâmetros e a situação e responda APENAS com JSON válido: ' +
-  '{"resposta":"sugestões claras e práticas em português, com passos de correção, em até 6 frases"}. ' +
-  'Priorize medidas seguras: TPAs parciais, ajustes graduais (máx. 1-2 °C/dia), condicionadores, redução de ração, ' +
-  'verificação do filtro biológico, etc. Se os parâmetros informados estiverem todos OK, sugira apenas manter a rotina.';
-
-app.post('/sugestoes-ajuste', async (req, res) => {
-  const corpo = req.body || {};
-  try {
-    const texto = JSON.stringify(corpo);
-    const userText = `Parâmetros/situação do aquário: ${texto}. Sugira ajustes.`;
-    const dados = await viaIAVision({
-      imagem: null,
-      systemPrompt: PROMPT_SUGESTOES_AJUSTE,
-      userText,
-    });
-    if (dados && typeof dados.resposta === 'string' && dados.resposta.trim()) {
-      return res.json({ resposta: String(dados.resposta) });
-    }
-  } catch (e) {
-    console.error('Falha ao gerar sugestões de ajuste (IA):', e.message);
-  }
-  const alertas = (corpo.alertas || []).map((a) => String(a.campo || a.titulo || '').toLowerCase());
-  const resumo = String(corpo.resumo || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const tem = (palavra) => alertas.includes(palavra) || resumo.includes(palavra);
-  const linhas = [];
-  if (tem('temperatura')) linhas.push('Temperatura fora da faixa: ajuste o aquecedor (~1W por litro) e mude a temperatura aos poucos (máx. 1-2 °C por dia).');
-  if (tem('ph')) linhas.push('pH fora do ideal: evite variações bruscas. Troncos e folhas baixam o pH; rochas calcárias elevam. Ajuste aos poucos.');
-  if (tem('amonia') || tem('amônia')) linhas.push('Amônia acima de 0: faça TPA de 20-30%, reduza a alimentação, use condicionador e confira o filtro biológico.');
-  if (tem('nitrito')) linhas.push('Nitrito alto: ciclo incompleto. Reduza a ração, faça TPAs e adicione bactérias benéficas.');
-  if (tem('nitrato')) linhas.push('Nitrato alto: TPAs regulares, menos ração e plantas ajudam a consumir o excesso.');
-  if (tem('kh') || tem('dureza em carbonatos')) linhas.push('KH fora da faixa: use tampão de KH próprio e ajuste aos poucos para não estressar os peixes.');
-  if (tem('gh') || tem('dureza geral')) linhas.push('GH fora da faixa: eleve com sais próprios ou reduza com água de osmose, sempre gradualmente.');
-  if (linhas.length === 0) linhas.push('Revise as medições e repita o teste em 24-48h. Mantenha TPAs regulares e alimentação moderada.');
-  return res.json({
-    resposta: `Sugestões rápidas para ajustar a água:\n\n${linhas.map((l) => `• ${l}`).join('\n')}\n\nMeça novamente em 24-48h para acompanhar a melhora.`,
-    _offline: true,
-  });
-});
-
-// ============================ TRIAL (teste freemium) ============================
-// Guarda anti-reinstalação do teste freemium: reserva o teste por dispositivo.
-app.post('/trial', (req, res) => {
-  const { dispositivoId } = req.body || {};
-  const r = trialStore.reservar(dispositivoId);
-  res.json(r);
-});
-
-app.get('/trial/todas', (req, res) => {
-  if (!exigirAdmin(req, res)) return;
-  res.json(trialStore.listar());
-});
-
-app.delete('/trial/:dispositivoId', (req, res) => {
-  if (!exigirAdmin(req, res)) return;
-  const removido = trialStore.remover(req.params.dispositivoId);
-  if (!removido) return res.status(404).json({ erro: 'Dispositivo não encontrado.' });
-  res.json({ ok: true });
-});
-
-// ============================ TESTER (limite de testadores) ============================
-// O app consulta esta rota no boot (ambiente tester) para validar o acesso:
-//  - acesso ILIMITADO (quem recebeu o link entra; não há limite de vagas);
+//  - no máximo LIMITE_TESTERS dispositivos distintos;
 //  - expira em testerStore.EXPIRA_EM (30/09/2026) mesmo que esqueçam de tirar o link do ar.
 
 app.post('/tester/validar', (req, res) => {
@@ -3376,7 +2875,7 @@ app.post('/tester/validar', (req, res) => {
   if (!r.ok) {
     return res.status(403).json({ ok: false, codigo: r.codigo, motivo: r.motivo });
   }
-  res.json({ ok: true, limite: 'ilimitado' });
+  res.json({ ok: true, limite: testerStore.LIMITE_TESTERS });
 });
 
 app.get('/tester/admin', (req, res) => {

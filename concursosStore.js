@@ -160,6 +160,58 @@ function obterHistorico() {
   return Array.isArray(dados.historico) ? dados.historico : [];
 }
 
+// Se o vencedor foi declarado há mais de 2 dias, desativa o concurso
+// automaticamente, guarda datas + vencedor no histórico e limpa a base ativa
+// (config resetada para um novo concurso).
+function encerrarSeDivulgacaoExpirada() {
+  const dados = ler();
+  const ganhador = dados.ganhador;
+  const config = dados.config;
+  if (!ganhador || !config || config.ativo !== true) return false;
+  const declaradoEm = Number(ganhador.declaradoEm) || 0;
+  if (Date.now() - declaradoEm < 2 * 24 * 60 * 60 * 1000) return false;
+
+  const inscricao = obterInscricao(ganhador.inscricaoId);
+  const registros = Array.isArray(dados.historico) ? dados.historico : [];
+  registros.push({
+    categoria: config.categoria || '',
+    premio: config.premio || '',
+    inscricaoDe: config.inscricaoDe || 0,
+    inscricaoAte: config.inscricaoAte || 0,
+    votacaoDe: config.votacaoDe || 0,
+    votacaoAte: config.votacaoAte || 0,
+    encerradoEm: Date.now(),
+    ganhador: inscricao
+      ? {
+          nome: inscricao.nome || '',
+          apelido: inscricao.apelido || '',
+          votos: inscricao.votos || 0,
+          premio: config.premio || '',
+        }
+      : null,
+  });
+
+  dados.historico = registros;
+  dados.inscricoes = [];
+  dados.ganhador = null;
+  dados.config = {
+    ativo: false,
+    categoria: '',
+    regra: '',
+    premio: '',
+    patrocinador: '',
+    url: '',
+    inscricaoDe: 0,
+    inscricaoAte: 0,
+    votacaoDe: 0,
+    votacaoAte: 0,
+    linkVotacao: '',
+    ganhadorDeclarado: false,
+  };
+  salvar(dados);
+  return true;
+}
+
 module.exports = {
   obterConfig,
   salvarConfig,
@@ -174,4 +226,5 @@ module.exports = {
   obterGanhador,
   encerrarConcurso,
   obterHistorico,
+  encerrarSeDivulgacaoExpirada,
 };

@@ -95,6 +95,8 @@
 (function () {
   var API = window.AQUARIAPP_API || '';
   var DEVICE_KEY = 'aquariapp:voto-dispositivo';
+  var VOTO_REGISTRADO_KEY = 'aquariapp:voto-registrado';
+  var configuracaoAtual = {};
   var jaVotou = false;
   // Foto em destaque: a enquete chega com ?votar=<id da inscricao> quando o
   // participante compartilha o próprio link no WhatsApp.
@@ -139,6 +141,7 @@
       return;
     }
     var cfg = dados.config;
+    configuracaoAtual = cfg;
     var box = '';
     box += '<div class="box">';
     box += '<h1>' + (cfg.categoria || 'Concurso de Aquários') + '</h1>';
@@ -222,6 +225,9 @@
       .then(function (res) {
         if (res.ok) {
           jaVotou = true;
+          try {
+            localStorage.setItem(VOTO_REGISTRADO_KEY, JSON.stringify({ votacaoAte: configuracaoAtual.votacaoAte, ts: Date.now() }));
+          } catch (e) {}
           el('conteudo').insertAdjacentHTML('beforeend', '<div class="ok">✅ Voto registrado!</div>');
           carregar();
         } else if (res.j && res.j.jaVotou) {

@@ -25,7 +25,7 @@ services:
         sync: false
       # URL pública do front (ex.: https://aquariapp.netlify.app)
       - key: ALLOWED_ORIGINS
-        value: https://serene-selkie-310f60.netlify.app,https://tranquil-sable-8b2aa1.netlify.app
+        value: https://aquariapp.com.br,https://www.aquariapp.com.br,https://tranquil-sable-8b2aa1.netlify.app,https://serene-selkie-310f60.netlify.app
       # URL pública deste backend (ex.: https://aquariapp-ia.onrender.com)
       - key: PUBLIC_BASE_URL
         value: https://aquariapp-ia.onrender.com
@@ -34,4 +34,4 @@ services:
       - key: PAGAMENTO_WEBHOOK_URL
         value: https://aquariapp-ia.onrender.com/pagamentos/webhook
       - key: PAGAMENTO_URL_RETORNO
-        value: https://tranquil-sable-8b2aa1.netlify.app
+        value: https://aquariapp.com.br

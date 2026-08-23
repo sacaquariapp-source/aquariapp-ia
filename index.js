@@ -4,6 +4,11 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const express = require('express');
+const fsApp = require('fs');
+const pathApp = require('path');
+const TESTER_APP_DIR = pathApp.join(__dirname, 'tester-app');
+const TESTER_INDEX = pathApp.join(TESTER_APP_DIR, 'index.html');
+const TEM_TESTER_APP = (() => { try { return fsApp.existsSync(TESTER_INDEX); } catch (e) { return false; } })();
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -451,6 +456,7 @@ const PROMPT_SISTEMA =
   '"Ciclídeo do Texas" (Herichthys cyanoguttatus) tem pontos azuis em corpo prateado. ' +
   '"Oscar" (Astronotus ocellatus) tem manchas oceladas (olho) na base da cauda. ' +
   '"Severum" (Heros efasciatus) tem corpo arredondado amarelado com faixas verticais discretas. ' +
+  '"Ciclídeo Papagaio / Blood Parrot" é um híbrido de aquário com corpo CURTO e bem arredondado (formato de pão/balão), boca pequena que NÃO fecha (sempre aberta, em forma de "o"), cores laranja/amarelo/vermelho uniformes, nadadeira dorsal e caudal curtas, e origem artificial (criado em cativeiro) — é MUITO diferente do Green Terror (corpo alongado esverdeado, boca normal, barbatanas longas e pontiagudas). Se a foto mostra corpo em balão + boca aberta, é PAPAGAIO, nunca Green Terror. ' +
   'Ciclídeos do Malawi (Aulonocara, Labidochromis, Melanochromis, Pseudotropheus) são de origem AFRICANA, corpo mais alongado e cores vivas uniformes — se a foto mostra um peixe grande, esverdeado, com manchas e barbatanas longas, é provavelmente Green Terror (Andinoacara rivulatus), NUNCA um Malawi. ' +
   'Para ciclídeos americanos com dimorfismo fácil, preencha "dimorfismo" (ex.: Green Terror — macho maior, com giba nucal e barbatanas dorsais/pélvicas longas e pontudas; fêmea menor e mais arredondada). ' +
   '(3.8) CUIDADO com peixes pequenos e comuns que confundem — sempre diga a ESPÉCIE exata, nunca apenas o grupo: ' +
@@ -787,18 +793,24 @@ async function validarFotoOpenAI(dataUrl, prompt) {
 }
 
 app.get('/', (req, res) => {
-  res.json({
-    status: 'ok',
-    servico: 'AquarIApp Identificador',
-    chaves: semChaves(),
-    fontes: {
-      Fishipedia: true,
-      AquarismoPaulista: true,
-      ChacaraTakeyoshi: true,
-      Wikipedia: true,
-      GuiaSeuNovoAquario: true,
-    },
-  });
+  // Navegadores recebem o app dos testadores (mesma origem da IA: sem CORS).
+  // Clientes de API/monitoramento continuam recebendo o JSON de status.
+  if (TEM_TESTER_APP && String(req.headers.accept || '').includes('text/html')) {
+    return res.sendFile(TESTER_INDEX);
+  }
+// original:
+    res.json({
+      status: 'ok',
+      servico: 'AquarIApp Identificador',
+      chaves: semChaves(),
+      fontes: {
+        Fishipedia: true,
+        AquarismoPaulista: true,
+        ChacaraTakeyoshi: true,
+        Wikipedia: true,
+        GuiaSeuNovoAquario: true,
+      },
+    });
 });
 
 app.post('/identify', async (req, res) => {
@@ -3570,7 +3582,15 @@ app.get('/contas/admin', (req, res) => {
 });
 
 if (require.main === module) {
-  app.listen(PORT, () => {
+  // ---- App dos testadores (SPA estática) — registrada APÓS todas as rotas de API ----
+// Serve /_expo/*, /assets/*, /manifest.json, /favicon.ico, /sw.js e /icons/* da
+// pasta tester-app. A raiz '/' já entrega o index.html para navegadores (patch
+// no GET '/'), então o PWA e a IA convivem na MESMA origem (sem CORS).
+if (TEM_TESTER_APP) {
+  app.use(express.static(TESTER_APP_DIR, { maxAge: '1h', index: false }));
+}
+
+app.listen(PORT, () => {
     console.log(`[AquarIApp Server] rodando em http://localhost:${PORT}`);
     console.log(`Chaves detectadas: ${semChaves().join(', ') || 'nenhuma — preencha o .env'}`);
     console.log(`Admin: http://localhost:${PORT}/admin`);

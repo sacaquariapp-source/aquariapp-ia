@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AquarIApp · Admin de Usuários</title>
+<style>
+  :root {
+    --deep: #030d1c; --ocean: #081a33; --mid: #0f2f5e;
+    --accent: #00b4d8; --accentLight: #7ce5ef;
+    --text: #eef4ff; --muted: #8ba5c4; --border: #1d4e92;
+    --success: #38b000; --warning: #fb8c00; --danger: #ef5350;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background: var(--deep); color: var(--text); }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 24px 16px 60px; }
+  header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+  header h1 { font-size: 20px; margin: 0; }
+  header p { color: var(--muted); font-size: 13px; margin: 4px 0 0; }
+  .badge { background: rgba(0,180,216,.15); border: 1px solid var(--accent); color: var(--accentLight); border-radius: 999px; padding: 4px 12px; font-size: 11px; font-weight: 700; }
+  .card { background: var(--mid); border: 1px solid var(--border); border-radius: 14px; padding: 16px; margin-bottom: 14px; }
+  .stats { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+  .stat { flex: 1; min-width: 120px; background: var(--mid); border: 1px solid var(--accent); border-radius: 12px; padding: 12px; text-align: center; }
+  .stat b { display: block; font-size: 20px; }
+  .stat span { color: var(--muted); font-size: 11px; }
+  input, button { font-family: inherit; }
+  input { width: 100%; background: var(--ocean); border: 1.5px solid var(--border); color: var(--text); border-radius: 10px; padding: 11px 12px; font-size: 14px; }
+  .barra { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  .btn { border: none; border-radius: 12px; padding: 12px 18px; font-size: 14px; font-weight: 800; cursor: pointer; }
+  .btn-primario { background: var(--accent); color: var(--deep); }
+  .btn-escuro { background: var(--ocean); color: var(--text); border: 1px solid var(--accent); }
+  .btn-perigo { background: rgba(239,83,80,.15); color: var(--danger); border: 1px solid var(--danger); }
+  .segmentos { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .segmentos button { background: var(--ocean); border: 1.5px solid var(--border); color: var(--muted); border-radius: 10px; padding: 10px 16px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .segmentos button.ativa { background: rgba(0,180,216,.15); border-color: var(--accent); color: var(--accentLight); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--accentLight); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  td { padding: 9px 10px; border-bottom: 1px solid rgba(29,78,146,.35); word-break: break-word; }
+  tr:hover td { background: rgba(0,180,216,.05); }
+  .tag { background: var(--ocean); border: 1px solid var(--border); border-radius: 8px; padding: 3px 9px; font-size: 11.5px; white-space: nowrap; }
+  .tag.pago { border-color: var(--success); color: var(--success); }
+  .tag.off { border-color: var(--warning); color: var(--warning); }
+  .seguranca { margin-bottom: 16px; }
+  .seguranca input { font-family: monospace; }
+  .aviso { background: rgba(251,140,0,.1); border: 1px solid var(--warning); color: var(--warning); border-radius: 10px; padding: 10px 12px; font-size: 13px; margin-bottom: 14px; }
+  .vazio { text-align: center; color: var(--muted); padding: 40px 0; }
+  .voltar { color: var(--accentLight); text-decoration: none; font-size: 13px; font-weight: 700; }
+  .nota { color: var(--muted); font-size: 12px; margin-top: 10px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Usuários e Lista de Transmissão</h1>
+      <p>Painel de administração do AquarIApp · <a class="voltar" href="/admin">← Voltar ao painel</a></p>
+    </div>
+    <span class="badge">Admin</span>
+  </header>
+
+  <div class="card seguranca">
+    <label style="display:block;color:#7ce5ef;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Chave de administração</label>
+    <div class="barra" style="margin:0">
+      <input type="password" id="chave" placeholder="Digite a chave (ADMIN_KEY do servidor)" autocomplete="off" />
+      <button class="btn btn-escuro" id="btnEntrar" style="flex:none">Entrar</button>
+      <button class="btn btn-perigo" id="btnSair" style="flex:none">Sair</button>
+    </div>
+  </div>
+
+  <div id="aviso" class="aviso" style="display:none"></div>
+
+  <div class="stats">
+    <div class="stat"><b id="stTotal">—</b><span>usuários</span></div>
+    <div class="stat"><b id="stAssinantes">—</b><span>assinantes</span></div>
+    <div class="stat"><b id="stBasicos">—</b><span>básicos</span></div>
+    <div class="stat"><b id="stOfertas">—</b><span>aceitam ofertas</span></div>
+    <div class="stat"><b id="stCancelados">—</b><span>cancelaram</span></div>
+  </div>
+
+  <div class="segmentos" id="segmentos">
+    <button data-seg="todos" class="ativa">Todos</button>
+    <button data-seg="assinantes">Assinantes (Premium)</button>
+    <button data-seg="basicos">Básicos (grátis)</button>
+    <button data-seg="ofertas">Lista de transmissão (ofertas)</button>
+    <button data-seg="cancelados">Cancelaram</button>
+  </div>
+
+  <div class="barra">
+    <button class="btn btn-primario" id="btnCSV" style="flex:none">Baixar lista (.csv)</button>
+    <button class="btn btn-escuro" id="btnRecarregar" style="flex:none">Atualizar</button>
+  </div>
+
+  <div class="card" style="padding:0;overflow-x:auto">
+    <table>
+      <thead><tr><th>Email</th><th>Plano</th><th>Ofertas</th><th>Cadastrado em</th></tr></thead>
+      <tbody id="corpo"><tr><td colspan="4" class="vazio">Entre com a chave para carregar.</td></tr></tbody>
+    </table>
+  </div>
+
+  <p class="nota">
+    A lista é gerada na hora a partir do registro de contas do app — novos cadastros,
+    mudanças de plano (pagamento confirmado) e cancelamentos entram e saem
+    automaticamente. "Lista de transmissão (ofertas)" contém apenas quem aceitou
+    receber cupons e novidades (padrão ao criar conta; o usuário pode sair quando
+    quiser em Configurações no app). O CSV é importável em qualquer disparador de
+    emails (Mailchimp, Brevo etc.).
+  </p>
+</div>
+
+<script>
+  var CHAVE_KEY = 'aquariapp:admin-key';
+  var chave = localStorage.getItem(CHAVE_KEY) || '';
+  var segmento = 'todos';
+  var $ = function (id) { return document.getElementById(id); };
+
+  function mostrarAviso(msg) {
+    var a = $('aviso');
+    if (!msg) { a.style.display = 'none'; return; }
+    a.textContent = msg;
+    a.style.display = 'block';
+  }
+
+  function cabecalho() {
+    return { 'Content-Type': 'application/json', 'X-Admin-Key': chave };
+  }
+
+  function dataCurta(iso) {
+    if (!iso) return '—';
+    try { return new Date(iso).toLocaleDateString('pt-BR'); } catch (e) { return iso; }
+  }
+
+  async function carregar() {
+    mostrarAviso('');
+    try {
+      var r = await fetch('/contas/admin?segmento=' + segmento, { headers: cabecalho(), credentials: 'same-origin' });
+      if (r.status === 401 || r.status === 403) {
+        $('corpo').innerHTML = '<tr><td colspan="4" class="vazio">Chave inválida ou expirada.</td></tr>';
+        return false;
+      }
+      var d = await r.json();
+      var linhas = '';
+      if (!d.contas || !d.contas.length) {
+        linhas = '<tr><td colspan="4" class="vazio">Nenhum usuário neste segmento ainda.</td></tr>';
+      } else {
+        for (var i = 0; i < d.contas.length; i++) {
+          var c = d.contas[i];
+          var planoTag = c.plano === 'basico'
+            ? '<span class="tag">Básico' + (c.canceladoEm ? ' · cancelou' : '') + '</span>'
+            : '<span class="tag pago">Premium ' + c.plano + '</span>';
+          var ofertasTag = c.receberOfertas === false
+            ? '<span class="tag off">não quer</span>'
+            : '<span class="tag pago">aceita</span>';
+          linhas += '<tr><td>' + c.email + '</td><td>' + planoTag + '</td><td>' + ofertasTag + '</td><td>' + dataCurta(c.criadoEm) + '</td></tr>';
+        }
+      }
+      $('corpo').innerHTML = linhas;
+      return true;
+    } catch (e) {
+      mostrarAviso('Falha de rede ao consultar /contas/admin.');
+      return false;
+    }
+  }
+
+  async function carregarResumo() {
+    try {
+      var r = await fetch('/contas/admin?segmento=todos', { headers: cabecalho(), credentials: 'same-origin' });
+      if (!r.ok) return;
+      var todas = (await r.json()).contas || [];
+      $('stTotal').textContent = todas.length;
+      $('stAssinantes').textContent = todas.filter(function (c) { return c.plano !== 'basico'; }).length;
+      $('stBasicos').textContent = todas.filter(function (c) { return c.plano === 'basico'; }).length;
+      $('stOfertas').textContent = todas.filter(function (c) { return c.receberOfertas !== false; }).length;
+      $('stCancelados').textContent = todas.filter(function (c) { return !!c.canceladoEm; }).length;
+    } catch (e) {}
+  }
+
+  async function entrar() {
+    var k = $('chave').value.trim();
+    if (!k) return;
+    chave = k;
+    localStorage.setItem(CHAVE_KEY, chave);
+    var ok = await carregar();
+    if (ok) await carregarResumo();
+    else mostrarAviso('Chave inválida ou expirada.');
+  }
+
+  function sair() {
+    chave = '';
+    localStorage.removeItem(CHAVE_KEY);
+    $('corpo').innerHTML = '<tr><td colspan="4" class="vazio">Entre com a chave para carregar.</td></tr>';
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    $('btnEntrar').addEventListener('click', entrar);
+    $('chave').addEventListener('keydown', function (e) { if (e.key === 'Enter') entrar(); });
+    $('btnSair').addEventListener('click', sair);
+    $('btnRecarregar').addEventListener('click', function () { carregar(); carregarResumo(); });
+    $('btnCSV').addEventListener('click', function () {
+      window.open('/contas/admin?segmento=' + encodeURIComponent(segmento) + '&formato=csv', '_blank');
+    });
+    document.querySelectorAll('#segmentos button').forEach(function (b) {
+      b.addEventListener('click', function () {
+        document.querySelectorAll('#segmentos button').forEach(function (x) { x.classList.remove('ativa'); });
+        b.classList.add('ativa');
+        segmento = b.getAttribute('data-seg');
+        carregar();
+      });
+    });
+    if (chave) { $('chave').value = chave; entrar(); }
+  });
+</script>
+</body>
+</html>

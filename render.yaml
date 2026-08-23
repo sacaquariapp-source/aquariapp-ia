@@ -29,3 +29,9 @@ services:
       # URL pública deste backend (ex.: https://aquariapp-ia.onrender.com)
       - key: PUBLIC_BASE_URL
         value: https://aquariapp-ia.onrender.com
+      - key: MERCADO_PAGO_ACCESS_TOKEN
+        sync: false
+      - key: PAGAMENTO_WEBHOOK_URL
+        value: https://aquariapp-ia.onrender.com/pagamentos/webhook
+      - key: PAGAMENTO_URL_RETORNO
+        value: https://tranquil-sable-8b2aa1.netlify.app

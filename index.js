@@ -21,14 +21,29 @@ const whatsappApi = require('./whatsappApi');
 const concursosStore = require('./concursosStore');
 const telemetriaStore = require('./telemetriaStore');
 const testerStore = require('./testerStore');
-const iaUsoStore = require('./iaUsoStore');
+const pagamentosStore = require('./pagamentosStore');
+const contasStore = require('./contasStore');
 
+// Mercado Pago (Checkout Pro). Sem token configurado, as rotas respondem
+// INDISPONIVEL e o app mantém o comportamento atual.
+const MP_TOKEN = process.env.MERCADO_PAGO_ACCESS_TOKEN || '';
+// Base da API do Mercado Pago. Overridável por env apenas para TESTES locais
+// (mock); em produção usar sempre o padrão.
+const MP_API = process.env.MP_API_BASE || 'https://api.mercadopago.com';
+// URL para onde o comprador volta depois de pagar (back_urls) — o app web
+// também consulta /pagamentos/status/:ref para ativar o benefício.
+const PAGAMENTO_RETORNO = process.env.PAGAMENTO_URL_RETORNO || 'https://tranquil-sable-8b2aa1.netlify.app';
+
+const otplib = require('otplib');
 const ADMIN_KEY = process.env.ADMIN_KEY || (process.env.NODE_ENV === 'production' ? '' : 'admin123');
 if (!ADMIN_KEY) {
   console.error('[FATAL] Defina a variável ADMIN_KEY no .env (obrigatória em produção).');
   process.exit(1);
 }
 
+// 2FA opcional no Admin: se ADMIN_TOTP_SECRET estiver definido no ambiente,
+// todas as rotas admin exigem também o código de 6 dígitos (X-Otp).
+const ADMIN_TOTP_SECRET = process.env.ADMIN_TOTP_SECRET || '';
 const SESSION_SECRET = process.env.SESSION_SECRET || ADMIN_KEY;
 const COOKIE_ADMIN = 'aquariapp_admin';
 const DURACAO_SESSAO_MS = 30 * 24 * 60 * 60 * 1000;
@@ -66,10 +81,22 @@ function cookieAdminValido(req) {
   return false;
 }
 
+function otpAdminValido(req) {
+  if (!ADMIN_TOTP_SECRET) return true; // 2FA não configurado → não exige
+  const otp = req.get('X-Otp') || '';
+  if (!/^\d{6}$/.test(otp)) return false;
+  try {
+    const res = otplib.verifySync({ token: otp, secret: ADMIN_TOTP_SECRET });
+    return res.valid === true;
+  } catch (e) {
+    return false;
+  }
+}
+
 function autenticado(req) {
   const chave = req.get('X-Admin-Key');
-  if (chave && chave === ADMIN_KEY) return true;
-  return cookieAdminValido(req);
+  if (chave && chave === ADMIN_KEY) return otpAdminValido(req);
+  return cookieAdminValido(req) && otpAdminValido(req);
 }
 
 const { enriquecerWikipedia } = require('./wikipedia.js');
@@ -210,14 +237,17 @@ const rotasIA = [
   '/identify',
   '/buscar-nome',
   '/buscar-produto',
+  '/alimentos-recomendados',
   '/validar-foto',
   '/diagnostico',
   '/diagnostico-alga',
   '/diagnostico-micro',
   '/compatibilidade',
   '/sugestoes',
+  '/sugestoes-ajuste',
   '/sugestao-aquario',
   '/avaliacao-aquario',
+  '/avaliacao-graficos',
   '/cronograma-alimentar',
   '/pergunta',
 ];
@@ -283,14 +313,32 @@ const PROMPT_VALIDACAO_AQUARIO =
   'animais ou insetos TERRESTRES, plantas terrestres, comidas, paisagens de terra, mar ou água salgada. ' +
   'Se tiver dúvida, responda valida false.';
 
+const PROMPT_VALIDACAO_CONCURSO =
+  'Você é o verificador de fotos de um CONCURSO de aquários de água doce. Analise a imagem e responda ' +
+  'APENAS com JSON válido no formato {"valida": true} ou {"valida": false, "motivo": "explicação curta em português"}. ' +
+  'A foto é VÁLIDA somente se mostrar o AQUÁRIO INTEIRO em cena — o tanque completo com água, vidro e ambiente ' +
+  '(decoração, substrato, plantas e/ou peixes). ' +
+  'A foto é INVÁLIDA se: (1) mostrar apenas um peixe ou animal de perto sem o aquário; (2) não houver cena de aquário ' +
+  'de água doce; (3) mostrar pessoas, pets, insetos terrestres, plantas terrestres, comidas, mar ou água salgada; ' +
+  '(4) a imagem for borrada, escura demais ou recortada sem contexto do aquário. ' +
+  'Se tiver dúvida, responda valida false.';
+
 const PROMPT_COMPATIBILIDADE =
-  'Você é um especialista em aquarismo de água doce. Avalie se um novo peixe pode ser introduzido com segurança em um aquário. ' +
-  'Cruzando: (1) a compatibilidade do novo peixe com CADA peixe já existente no aquário (agressividade, territorialidade, ' +
-  'comportamento predatório, diferença de tamanho, hábitos de nadar na mesma região), e (2) a compatibilidade com os parâmetros ' +
-  'da água, principalmente pH e temperatura (compare a faixa preferida do novo peixe com as dos peixes existentes e com o pH ' +
-  'desejado do aquário). Responda APENAS com JSON válido: {"compativel": true} se for seguro, ou ' +
-  '{"compativel": false, "motivo": "explicação breve em português com poucas palavras"} se houver risco. ' +
-  'Se não tiver certeza, responda compativel false com o motivo da dúvida.';
+  'Você é um especialista em aquarismo de água doce. Avalie se um NOVO peixe pode ser introduzido com segurança em um aquário JÁ habitado. ' +
+  'Analise RIGOROSAMENTE os seguintes critérios, nesta ordem de importância: ' +
+  '(1) PREDAÇÃO E COMPATIBILIDADE COM A FAUNA EXISTENTE: avalie o comportamento predatório e o TAMANHO ADULTO do novo peixe contra CADA ' +
+  'peixe já existente. Se o novo peixe é um predador (ex.: Oscar, ciclídeo grande) e a fauna existente é pequena (ex.: tetras, neons, ' +
+  'guppys, coridoras), é INCOMPATÍVEL — o novo peixe vai caçar/comer a fauna pequena. Também avalie agressividade, territorialidade, ' +
+  'diferença de tamanho e se nadam na mesma região. ' +
+  '(2) ESPAÇO / LOTAÇÃO: considere o VOLUME do aquário (litros). Um peixe grande (ex.: Oscar precisa de 400L+; um adulto grande não ' +
+  'cabe num tanque pequeno) NÃO pode ser colocado em um aquário pequeno. Avalie se o tamanho adulto do novo peixe é compatível com o ' +
+  'volume disponível e se a lotação não fica excessiva. ' +
+  '(3) AMBIENTE / TIPO DO AQUÁRIO: considere o tipo informado (comunitário, etc.) e se o novo peixe se adequa ao conjunto. ' +
+  '(4) PARÂMETROS DA ÁGUA: compare a faixa preferida do novo peixe (pH e temperatura) com a dos peixes existentes e com o pH/temperatura ' +
+  'do aquário. ' +
+  'Responda APENAS com JSON válido: {"compativel": true} se for seguro, ou ' +
+  '{"compativel": false, "motivo": "explicação breve em português com poucas palavras, citando o risco principal (ex.: predação, espaço insuficiente, pH/temperatura incompatíveis)"} se houver QUALQUER risco. ' +
+  'Se houver mais de um risco, mencione os principais no motivo. Se não tiver certeza, responda compativel false com o motivo da dúvida.';
 
 const PROMPT_SUGESTOES =
   'Você é um especialista em aquarismo de água doce. O usuário quer sugestões de espécies de peixes (apenas fauna, nada de plantas) ' +
@@ -305,16 +353,26 @@ const PROMPT_SUGESTOES =
 
 const PROMPT_SUGESTAO_AQUARIO =
   'Você é um especialista em aquarismo de água doce. O usuário está planejando um aquário NOVO e informou: ' +
-  '(1) o volume pretendido em litros e (2) o tipo de aquário (Comunitário, Jumbo, Espécie Única ou Hospital). ' +
-  'Com base nessas duas informações, monte uma sugestão completa e equilibrada. Regras OBRIGATÓRIAS: ' +
+  '(1) o volume pretendido em litros, (2) o tipo de aquário (Comunitário, Jumbo, Espécie Única ou Hospital) e ' +
+  '(3) opcionalmente o tipo de fauna/biótopo desejado (amazônica, água negra, americana, asiática, africana, ' +
+  'australiana ou sem preferência) — siga as características do biótopo quando informado. ' +
+  'Com base nessas informações, monte uma sugestão completa e equilibrada. Regras OBRIGATÓRIAS: ' +
   '(1) FAUNA: sugira espécies compatíveis entre si (sem predação, sem territorialidade severa, hábitos e dieta compatíveis) ' +
-  'e em QUANTIDADE adequada ao volume (regra prática de até ~1 cm de peixe por litro para comunitário; menos para ' +
-  'espécies grandes, territoriais ou de água fria). Para "Jumbo" priorize peixes de grande porte; para "Espécie Única" ' +
-  'sugira apenas 1 espécie (ex.: um ciclídeo de porte médio) na quantidade adequada; para "Hospital" sugira pouca ' +
-  'fauna resistente (ex.: neon, rasbora) e sem decoração viva. ' +
+  'e em QUANTIDADE adequada ao volume (regra prática de até ~1 cm de peixe por litro, considerando 50% do tamanho adulto de cada peixe, para comunitário; menos para ' +
+  'espécies grandes, territoriais ou de água fria). ' +
+  'Para "Jumbo" priorize peixes de grande porte e VERIFIQUE se o volume é suficiente (um "Jumbo" exige no mínimo ' +
+  '~200-300 L; se o volume informado for menor, avise no campo "agua.nota" que o volume é pequeno para Jumbo e sugira ' +
+  'espécies compatíveis com o tamanho real). ' +
+  'Para "Espécie Única" sugira APENAS espécies de UM mesmo grupo/padrão (ex.: só ciclídeos, ou só americanos, ou só ' +
+  'barbos, ou só bettas, ou só guppies) — pode ser várias espécies do MESMO tipo (ex.: vários ciclídeos africanos), mas ' +
+  'nada de misturar grupos diferentes. ' +
+  'Para "Hospital" sugira pouca fauna resistente e de fácil manutenção (ex.: neon, rasbora) pensada para peixes que ' +
+  'estarão em tratamento/cuidados: aquário simples, sem substrato vivo, fácil de limpar e de observar; pode haver ' +
+  'medicamentos básicos na lista de equipamentos. ' +
   '(2) FLORA: sugira plantas aquáticas compatíveis com o tipo e o tamanho do aquário (até 6 espécies), considerando ' +
-  'luz e se faz sentido para o tipo (para Hospital, sugira poucas ou nenhuma). ' +
-  '(3) ÁGUA: sugira a faixa de pH ideal para o conjunto (ex.: 6,5 - 7,2) e a temperatura. ' +
+  'luz e se faz sentido para o tipo (para Hospital, sugira poucas ou nenhuma; para Jumbo priorize plantas de porte ' +
+  'maior; para biótopo africano, quase nenhuma). ' +
+  '(3) ÁGUA: sugira a faixa de pH ideal para o conjunto (ex.: 6,5 - 7,2) e a temperatura, coerentes com o biótopo/tipo. ' +
   '(4) EQUIPAMENTOS: sugira equipamentos essenciais para o volume e o tipo (filtro e vazão L/h, aquecedor em watts ' +
   'quando fizer sentido, iluminação, bomba/oxigenação, substrato e, se for plantado, CO2 quando necessário). ' +
   'Responda APENAS com JSON válido no formato: ' +
@@ -336,7 +394,7 @@ const PROMPT_AVALIACAO =
   '(2) pontosFortes: destaque o que está correto (fauna compatível, lotação adequada, plantado com CO2, etc.). ' +
   '(3) sugestoes: até 6 dicas práticas de melhoria considerando fauna, flora, equipamentos, iluminação, ' +
   'parâmetros, lotação e rotina de manutenção (TPA ~20% a cada 2 semanas). ' +
-  '(4) urgencias: liste riscos que exigem ação rápida — lotação acima do ideal (regra de 1 L por cm de peixe), ' +
+  '(4) urgencias: liste riscos que exigem ação rápida — lotação acima do ideal (regra de 1 L por cm de peixe, considerando 50% do tamanho adulto), ' +
   'amônia/nitrito altos, pH/temperatura fora da faixa das espécies, incompatibilidade entre espécies, ' +
   'filtragem insuficiente, uso de produto tóxico para a fauna. Se não houver urgência, retorne lista vazia. ' +
   '(5) Use regras de compatibilidade e os parâmetros ideais das espécies. Não invente problemas que os dados não suportam.';
@@ -354,26 +412,75 @@ const PROMPT_PERGUNTA =
   '(2) Não invente informações; se não souber, diga isso de forma breve. ' +
   '(3) A resposta deve ter no máximo 2 a 3 frases curtas (~180 caracteres).';
 
+const PROMPT_AVALIACAO_GRAFICOS =
+  'Você é um especialista em aquarismo de água doce e analisa os gráficos de qualidade da água de um aquário. ' +
+  'O usuário enviou as últimas medições registradas (série temporal de pH, temperatura, amônia, nitrito, nitrato, KH e GH). ' +
+  'Analise as TENDÊNCIAS e os VALORES ATUAIS. Responda APENAS com JSON válido: ' +
+  '{"resposta": "texto curto em português (até ~250 caracteres)"}. ' +
+  'A resposta deve: ' +
+  '(1) PARABENIZAR o aquarista pelos parâmetros bons e estáveis (ex.: amônia 0, nitrito 0, nitrato baixo, temperatura e pH estáveis). ' +
+  '(2) ALERTAR para perigos iminentes com base nas tendências (ex.: amônia subindo, nitrito presente, pH variando muito, temperatura fora da faixa). ' +
+  '(3) Trazer DICAS RESUMIDAS de como melhorar os parâmetros em poucos dias (TPA, alimentação, filtro, aquecedor, bactérias). ' +
+  'Seja objetivo, use emojis com moderação e não invente dados que não estão nas medições. ' +
+  'Valores de referência: amônia 0, nitrito 0, nitrato <20-40 ppm, pH estável 6,5-7,5, temperatura 24-28 °C.';
+
 
 const PROMPT_SISTEMA =
-  'Você é um especialista em aquarismo. Identifique o animal ou planta aquática da foto e responda APENAS com JSON válido no seguinte formato: ' +
+  'Você é um especialista mundial em peixes e plantas de aquário de água doce, com conhecimento profundo de taxonomia (cichlidae, characidae, ' +
+  'cyprinidae, poeciliidae, etc.). Sua tarefa é IDENTIFICAR COM ALTA PRECISÃO o animal ou planta aquática da foto. ' +
+  'Responda APENAS com JSON válido no formato: ' +
   '{"tipo":"fauna ou flora","confianca":0 a 100,"nomeComum":"nome popular em português","nomeCientifico":"nome científico","familia":"família",' +
   '"origem":"origem geográfica","tamanho":"ex: até 5 cm","temperatura":"ex: 23 - 27 °C","ph":"ex: 5,5 - 6,5","dureza":"ex: 5 - 12 °dH",' +
   '"dieta":"tipo de alimentação","comportamento":"comportamento","aquarioMinimo":"ex: 40 L","dificuldade":"fácil/médio/avançado",' +
   '"iluminacao":"baixa/média/alta","co2":"opcional/recomendado/necessário","crescimento":"lento/médio/rápido","tipoPlanta":"tipo de planta (se flora)",' +
-  '"observacoes":"curiosidades e dicas de manutenção"}. ' +
-  'COBERTURA: além de peixes e plantas, identifique TAMBÉM animais de água doce como invertebrados (camarões, caramujos, ' +
-  'caranguejos, lagostins, hidras, planárias, copépodes), anfíbios (axolotes, rãs), insetos e larvas aquáticas — por exemplo ' +
-  '"tigre d\'água" (larva de besouro mergulhador / Dytiscidae), baratas-d\'água, ninfas — e tartarugas de água doce. ' +
-  'REGRAS DE PRECISÃO: (1) Cuidado com espécies visualmente parecidas — analise detalhes como forma do corpo e da cabeça, ' +
-  'nadadeiras, padrão e cor, região da cauda, e prefira sempre o nome popular e científico CORRETOS. Exemplos: ' +
-  '"Ramirezi" (Mikrogeophagus ramirezi, corpo compacto e colorido com pintas azuis brilhantes e aleta dorsal com raios altos) é DIFERENTE de ' +
-  '"Apistogramma" (ex.: Apistogramma cacatuoides, mais alongado e com padrão de listras); Neon (Paracheirodon innesi) tem faixa vermelha só na metade, ' +
-  'Cardinal (Paracheirodon axelrodi) tem faixa vermelha no corpo inteiro. ' +
-  '(2) Se for claramente um animal ou planta aquática mas você não tiver certeza da espécie exata, retorne a espécie MAIS PROVÁVEL ' +
-  'com confianca baixa (ex.: 40-55) em vez de "desconhecido". ' +
-  '(3) Somente retorne tipo "invalido" se a foto não for um animal/planta aquática (aquário, lago, rio, mar), com um campo "motivo" curto. ' +
-  'Retorne tipo "desconhecido" apenas se a foto for aquática mas sem nenhum ser identificável.';
+  '"observacoes":"curiosidades e dicas de manutenção","dimorfismo":"como diferenciar MACHO de FÊMEA em poucas palavras (apenas se a espécie tem dimorfismo sexual fácil de ver; senão deixe vazio ' + '""".}. ' +
+  'COBERTURA: identifique peixes, plantas, invertebrados (camarões, caramujos, caranguejos, lagostins, hidras, planárias, copépodes), ' +
+  'anfíbios (axolotes, rãs), insetos e larvas aquáticas (ex.: "tigre d\'água", barata-d\'água, ninfas) e tartarugas de água doce. ' +
+  'REGRAS DE PRECISÃO (MUITO IMPORTANTES — NUNCA retorne nomes genéricos): ' +
+  '(1) NUNCA responda apenas "ciclídeo", "acará", "peixe" ou "peixe de aquário". SEMPRE dê a espécie mais específica possível, com nome popular e científico. ' +
+  '(2) "Acará" é um termo genérico — identifique a ESPÉCIE exata (ex.: Acará-bandeira Pterophyllum scalare, Acará-disco Symphysodon, ' +
+  'Acará-azul Aequidens pulcher, Acará-da-floresta Mesonauta festivus, Ciclídeo do Texas Herichthys cyanoguttatus, Texas Red/Herichthys carpintis "Texas red" que tem manchas vermelho-alaranjadas e pintas azuis, etc.). ' +
+  '"Texas Red" (Herichthys carpintis / "Texas Red Cichlid") tem corpo com fundo vermelho-rosado e MANCHAS azuis metálicas/verdes espalhadas — é totalmente DIFERENTE do Acará-bandeira (corpo em formato de disco com listras verticais) e do Acará-azul (cinza/azulado). ' +
+  '(3) Para ciclídeos africanos do Malawi, NUNCA diga apenas "ciclídeo do Malawi". Dê a espécie ou grupo específico: Aulonocara (Peacock, ex.: Aulonocara stuartgranti, Aulonocara baenschi "Sunshine"), ' +
+  'Labidochromis caeruleus (Yellow Lab), Melanochromis auratus (Auratus), Maylandia/Pseudotropheus zebra (Zebra, listras verticais), ' +
+  'Pseudotropheus acei (Acei), Cyrtocara moorii (Golfinho do Malawi), Tropheus (Tanganyika), Altolamprologus, etc. ' +
+  'Um "Aulonocara" (Peacock) tem corpo alongado com coloração uniforme e brilhante (azul/amarelo/laranja) e nadadeiras longas, sem listras verticais — diferente de um Mbuna listrado. ' +
+  '(3.5) CUIDADO com ciclídeos AMERICANOS grandes, que NUNCA devem ser confundidos com ciclídeos do Malawi: ' +
+  '"Green Terror" (Andinoacara rivulatus) tem corpo esverdeado com manchas escuras, bordas de barbatanas em tons amarelo/laranja, cabeça com padrão reticulado e barbatanas dorsais longas e pontiagudas no MACHO — origem América do Sul/Pacífico. ' +
+  '"Jack Dempsey" (Rocio octofasciata) tem corpo marrom-escuro com pontos azuis/verdes brilhantes. ' +
+  '"Ciclídeo do Texas" (Herichthys cyanoguttatus) tem pontos azuis em corpo prateado. ' +
+  '"Oscar" (Astronotus ocellatus) tem manchas oceladas (olho) na base da cauda. ' +
+  '"Severum" (Heros efasciatus) tem corpo arredondado amarelado com faixas verticais discretas. ' +
+  'Ciclídeos do Malawi (Aulonocara, Labidochromis, Melanochromis, Pseudotropheus) são de origem AFRICANA, corpo mais alongado e cores vivas uniformes — se a foto mostra um peixe grande, esverdeado, com manchas e barbatanas longas, é provavelmente Green Terror (Andinoacara rivulatus), NUNCA um Malawi. ' +
+  'Para ciclídeos americanos com dimorfismo fácil, preencha "dimorfismo" (ex.: Green Terror — macho maior, com giba nucal e barbatanas dorsais/pélvicas longas e pontudas; fêmea menor e mais arredondada). ' +
+  '(3.8) CUIDADO com peixes pequenos e comuns que confundem — sempre diga a ESPÉCIE exata, nunca apenas o grupo: ' +
+  '"Neon Tetra" (Paracheirodon innesi) tem a faixa vermelha só na metade traseira do corpo; "Cardinal Tetra" (Paracheirodon axelrodi) tem a faixa vermelha no corpo INTEIRO — NUNCA confunda os dois. ' +
+  '"Guppy/Lebiste" (Poecilia reticulata) tem cauda e nadadeiras grandes e coloridas no macho; "Molinésia" (Poecilia sphenops/velifera) tem corpo mais alto e nadadeira dorsal maior; "Espada/Xifóforo" (Xiphophorus hellerii) tem prolongamento em espada na cauda; "Plati" (Xiphophorus maculatus) tem corpo mais compacto. ' +
+  '"Coridora" — identifique a espécie (Bronze/Corydoras aeneus, Panda/C. panda, Sterbai/C. sterbai, Pimenta/C. paleatus, etc.) pela mancha/padrão. ' +
+  '"Barbo" — identifique (Sumatra/Barbus tetrazona com faixas verticais pretas, Cherry/Puntius titteya com corpo avermelhado no macho, etc.). ' +
+  '"Peixe-palhaço/Botia" (Botia macracantha) tem faixas laranja e pretas; NÃO confundir com "Palhaço de água doce"... ' +
+  '"Tetra" sozinho é genérico — sempre a espécie (Vermelho/Aphyocharax anisitsi, Imperador/Nematobrycon palmeri, Fantasma/Megalamphodus megalopterus, etc.). ' +
+  '"Peixe-borboleta" (Pantodon buchholzi) tem nadadeiras largas em forma de asa e NÃO é um Betta. ' +
+  'Para lebistes/molinésias/espadas/platis (poeciliídeos) e para coridoras e muitos ciclídeos, preencha "dimorfismo" quando for fácil (ex.: guppy macho colorido com cauda grande, fêmea cinza maior; coridora macho com barbatana dorsal maior e pontuda). ' +
+  '(4) ANTES de responder, liste mentalmente as espécies parecidas e compare detalhes: forma da cabeça e do corpo, padrão e cor das manchas/listras, ' +
+  'formato e posição das nadadeiras, cauda, dorsal, região da boca. Não escolha por semelhança superficial. ' +
+  '(5) Se tiver dúvida entre duas espécies, escolha a mais provável, mas baixe a confianca (40-55) e explique as alternativas em "observacoes". ' +
+  '(6) Somente retorne tipo "invalido" se a foto não for animal/planta aquática, com campo "motivo" curto. ' +
+  'Retorne "desconhecido" apenas se a foto for aquática mas sem nada identificável.';
+
+// Prompt final de identificação: junta o PROMPT_SISTEMA com a lista de
+// espécies conhecidas do catálogo do app (para a IA escolher dentro dela).
+function montarPromptSistema() {
+  const lista = obterListaEspeciesPrompt();
+  return (
+    PROMPT_SISTEMA +
+    ' ' +
+    'CATÁLOGO DISPONÍVEL NO APP (escolha PREFERENCIALMENTE uma espécie desta lista quando a foto corresponder; ' +
+    'nomeComum + nomeCientifico): ' +
+    (lista || 'nenhuma') +
+    '. Se a espécie não estiver na lista, ainda assim identifique com nome popular e científico corretos.'
+  );
+}
 
 const PROMPT_BUSCA_NOME =
   'Você é um especialista em aquarismo de água doce. O usuário digitou o nome de uma espécie de peixe ou planta aquática e ' +
@@ -382,7 +489,7 @@ const PROMPT_BUSCA_NOME =
   '"origem":"origem geográfica","tamanho":"ex: até 5 cm","temperatura":"ex: 23 - 27 °C","ph":"ex: 5,5 - 6,5","dureza":"ex: 5 - 12 °dH",' +
   '"dieta":"tipo de alimentação","comportamento":"comportamento","aquarioMinimo":"ex: 40 L","dificuldade":"fácil/médio/avançado",' +
   '"iluminacao":"baixa/média/alta","co2":"opcional/recomendado/necessário","crescimento":"lento/médio/rápido","tipoPlanta":"tipo de planta (se flora)",' +
-  '"observacoes":"curiosidades e dicas de manutenção"}. Se o nome não corresponder a uma espécie aquática conhecida de água doce, ' +
+  '"observacoes":"curiosidades e dicas de manutenção","dimorfismo":"como diferenciar MACHO de FÊMEA em poucas palavras (apenas se a espécie tem dimorfismo sexual fácil de ver; senão deixe vazio ' + '""".}. Se o nome não corresponder a uma espécie aquática conhecida de água doce, ' +
   'responda apenas {"tipo":"desconhecido","motivo":"explicação curta"}. Não invente espécies: se não tiver certeza, retorne desconhecido.';
 
 const PROMPT_BUSCA_PRODUTO =
@@ -526,11 +633,11 @@ async function viaOpenAI(imagem) {
     body: JSON.stringify({
       model: 'gpt-4o-mini',
       response_format: { type: 'json_object' },
-      max_tokens: 1200,
+      max_tokens: 1600,
       messages: [
         {
           role: 'system',
-          content: PROMPT_SISTEMA,
+          content: montarPromptSistema(),
         },
         {
           role: 'user',
@@ -555,7 +662,7 @@ async function viaOpenAI(imagem) {
 
 async function viaGemini(base64, mime, textoExtra, sistemaPrompt) {
   const modelo = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
-  const system = sistemaPrompt || PROMPT_SISTEMA;
+  const system = sistemaPrompt || montarPromptSistema();
   const parts = [];
   if (base64) {
     parts.push({ inline_data: { mime_type: mime, data: base64 } });
@@ -582,7 +689,7 @@ async function viaGemini(base64, mime, textoExtra, sistemaPrompt) {
         systemInstruction: { parts: [{ text: system }] },
         generationConfig: {
           responseMimeType: 'application/json',
-          maxOutputTokens: 1200,
+          maxOutputTokens: 1800,
         },
       }),
     }
@@ -750,41 +857,56 @@ app.post('/identify', async (req, res) => {
     }
   }
 
-  if (process.env.GEMINI_API_KEY) {
+  const resultados = [];
+  const tentativas = [
+    ['Gemini', () => viaGemini(base64, prefixo)],
+    ['PlantNet', () => viaPlantNet(base64, prefixo)],
+    ['OpenAI', () => viaOpenAI(dataUrl)],
+  ];
+  for (const [nome, fn] of tentativas) {
+    if (nome === 'Gemini' && !process.env.GEMINI_API_KEY) continue;
+    if (nome === 'PlantNet' && !process.env.PLANTNET_API_KEY) continue;
+    if (nome === 'OpenAI' && !process.env.OPENAI_API_KEY) continue;
     try {
-      const r = await viaGemini(base64, prefixo);
-      return res.json(await comFoto(r));
+      const r = await fn();
+      resultados.push({ nome, r });
     } catch (e) {
-      console.error('Falha Gemini:', e.message);
+      console.error(`Falha ${nome}:`, e.message);
       if (e instanceof FotoInvalidaError) {
-        erros.push(`Gemini (foto inválida): ${e.message}`);
+        erros.push(`${nome} (foto inválida): ${e.message}`);
       } else {
-        erros.push(`Gemini: ${e.message}`);
+        erros.push(`${nome}: ${e.message}`);
       }
     }
   }
-  if (process.env.PLANTNET_API_KEY) {
-    try {
-      const r = await viaPlantNet(base64, prefixo);
-      const enr = await comFoto(r);
-      return res.json({ ...enr, opcoes: r.opcoes || [] });
-    } catch (e) {
-      console.error('Falha PlantNet:', e.message);
-      erros.push(`PlantNet: ${e.message}`);
+
+  if (resultados.length > 0) {
+    // Escolhe o resultado de MAIOR confiança; em empate, o que veio primeiro.
+    let melhor = resultados[0];
+    for (const cand of resultados.slice(1)) {
+      const c = Number(cand.r.confianca) || 0;
+      const m = Number(melhor.r.confianca) || 0;
+      if (c > m) melhor = cand;
+      else if (c === m && cand.nome === 'Gemini') melhor = cand;
     }
-  }
-  if (process.env.OPENAI_API_KEY) {
-    try {
-      const r = await viaOpenAI(dataUrl);
-      return res.json(await comFoto(r));
-    } catch (e) {
-      console.error('Falha OpenAI:', e.message);
-      if (e instanceof FotoInvalidaError) {
-        erros.push(`OpenAI (foto inválida): ${e.message}`);
-      } else {
-        erros.push(`OpenAI: ${e.message}`);
-      }
+    // PlantNet só identifica PLANTA. Se o melhor por confianca veio do PlantNet
+    // (tipo flora) mas um provedor de visão geral (Gemini/OpenAI) apontou FAUNA
+    // com confianca razoável, prioriza a fauna (evita "peixe → planta").
+    const vision = resultados.filter((x) => (x.nome === 'Gemini' || x.nome === 'OpenAI') && x.r && x.r.tipo === 'fauna');
+    if (melhor.nome === 'PlantNet' && melhor.r && melhor.r.tipo === 'flora' && vision.length > 0) {
+      const visaoTop = vision.sort((a, b) => (Number(b.r.confianca) || 0) - (Number(a.r.confianca) || 0))[0];
+      if ((Number(visaoTop.r.confianca) || 0) >= 60) melhor = visaoTop;
     }
+    const enr = await comFoto(melhor.r);
+    // Une as opções dos demais provedores quando houver divergência.
+    const opcoesExtras = resultados
+      .filter((x) => x !== melhor && x.r && x.r.nomeComum)
+      .map((x) => ({ provedor: x.nome, ...x.r }))
+      .filter((o) => o.nomeComum && o.nomeComum !== enr.nomeComum);
+    if (opcoesExtras.length > 0) {
+      enr.opcoes = [...(enr.opcoes || []), ...opcoesExtras];
+    }
+    return res.json(enr);
   }
 
   const motivosInvalidos = erros.filter((e) => e.includes('foto inválida'));
@@ -1246,15 +1368,29 @@ app.post('/compatibilidade', async (req, res) => {
     return res.status(400).json({ erro: 'Envie o campo "novoPeixe" com nomeCientifico/nomeComum.' });
   }
 
+  const { aquario } = req.body || {};
+
   const baseDoNovo =
     `Novo peixe: ${novoPeixe.nomeComum || ''} (${novoPeixe.nomeCientifico}). ` +
+    (novoPeixe.tamanho ? `Tamanho adulto: ${novoPeixe.tamanho}. ` : '') +
+    (novoPeixe.comportamento ? `Comportamento: ${novoPeixe.comportamento}. ` : '') +
+    (novoPeixe.dieta ? `Dieta: ${novoPeixe.dieta}. ` : '') +
     (novoPeixe.temperatura ? `Temperatura: ${novoPeixe.temperatura}. ` : '') +
     (novoPeixe.ph ? `pH: ${novoPeixe.ph}. ` : '');
+
+  const litros = aquario?.litros || '';
+  const tipoAquario = aquario?.tipo || '';
+  const descricaoAquario =
+    (litros ? `Capacidade do aquário: ${litros} L. ` : 'Capacidade do aquário: não informada. ') +
+    (tipoAquario ? `Tipo do aquário: ${tipoAquario}. ` : '');
 
   const textoFauna = (faunaExistente || [])
     .map((f, i) => {
       const qtd = f.quantidade ? ` (${f.quantidade}x)` : '';
       let linha = `${i + 1}. ${f.nomeComum || f.nome || ''} (${f.nomeCientifico || '?'})${qtd}`;
+      if (f.tamanho) linha += ` | Tamanho: ${f.tamanho}`;
+      if (f.comportamento) linha += ` | Comportamento: ${f.comportamento}`;
+      if (f.dieta) linha += ` | Dieta: ${f.dieta}`;
       if (f.temperatura) linha += ` | Temp: ${f.temperatura}`;
       if (f.ph) linha += ` | pH: ${f.ph}`;
       return linha;
@@ -1267,7 +1403,7 @@ app.post('/compatibilidade', async (req, res) => {
     (parametrosAgua?.temperatura ? `Temperatura medida: ${parametrosAgua.temperatura} °C. ` : '');
 
   const pergunta =
-    `${baseDoNovo}\nPeixes já existentes no aquário: ${textoFauna || 'nenhum'}\nParâmetros da água: ${textoAgua || 'não informados'}` +
+    `${baseDoNovo}\n${descricaoAquario}\nPeixes já existentes no aquário: ${textoFauna || 'nenhum'}\nParâmetros da água: ${textoAgua || 'não informados'}` +
     `\nAvalie se ${novoPeixe.nomeComum || novoPeixe.nomeCientifico} pode ser adicionado a este aquário.`;
 
   const erros = [];
@@ -1470,7 +1606,7 @@ app.post('/sugestoes', async (req, res) => {
 });
 
 app.post('/sugestao-aquario', async (req, res) => {
-  const { litros, tipo } = req.body || {};
+  const { litros, tipo, tipoFauna } = req.body || {};
   const volume = parseFloat(String(litros || '').replace(',', '.'));
   if (!volume || volume <= 0) {
     return res.status(400).json({ erro: 'Informe o volume pretendido em litros.' });
@@ -1478,11 +1614,96 @@ app.post('/sugestao-aquario', async (req, res) => {
   const tiposValidos = ['Comunitário', 'Jumbo', 'Espécie Única', 'Hospital'];
   const tipoAquario = tiposValidos.includes(tipo) ? tipo : 'Comunitário';
 
-  const pergunta =
-    `Volume pretendido: ${volume} L.\nTipo de aquário: ${tipoAquario}.\n` +
-    `Monte a sugestão completa de fauna, flora, água e equipamentos para este aquário novo.`;
+  // Biótopos de água doce: orientação para a IA escolher a fauna correta.
+  const BIOTOPOS = {
+    amazonica:
+      'Amazônico: água ácida (pH 6.0-7.0) e muito mole, temperatura quente (24-28 °C), rica em troncos. ' +
+      'IMPORTANTE — sugira espécies ESPECÍFICAS, NUNCA genéricos como "peixe amazônico". Prefira nomes concretos: ' +
+      '"Acará-bandeira" (Pterophyllum scalare), "Acará-disco" (Symphysodon aequifasciatus), "Neon" (Paracheirodon innesi), ' +
+      '"Cardinal" (Paracheirodon axelrodi), "Corydora" (ex.: Corydoras panda / aeneus), "Cascudo" (ex.: Ancistrus / Hypancistrus), ' +
+      '"Tetra-limon" (Hyphessobrycon pulchripinnis), "Acará-azul" (Aequidens pulcher), "Ramirezi" (Mikrogeophagus ramirezi), "Apistogramma". ' +
+      'Escolha 4 a 8 espécies compatíveis entre si, com quantidades realistas para o volume. ' +
+      'Flora: Echinodorus (ex.: Echinodorus amazonicus, "Chá-chá"), Vallisneria, Microsorum pteropus ("samambaia de Java").',
+    'agua-negra':
+      'Água negra (blackwater, afluentes do Rio Negro): água muito escura (cor de chá) por taninos de folhas e troncos, iluminação muito baixa, pH muito baixo (5.0-6.0). ' +
+      'IMPORTANTE — sugira espécies ESPECÍFICAS: "Neon" (Paracheirodon innesi), "Cardinal" (Paracheirodon axelrodi), ' +
+      '"Tetra-fantasma" (Hyphessobrycon sweglesi), "Acará-bandeira" (Pterophyllum scalare), "Ramirezi" (Mikrogeophagus ramirezi), ' +
+      '"Apistogramma" (ex.: Apistogramma agassizii), "Corydora" (Corydoras), "Otocinclus". ' +
+      'Escolha 4 a 8 espécies compatíveis, com quantidades realistas para o volume.',
+    americana:
+      'Americana (rios de correnteza e lagos da América Central): água alcalina e dura, decoração de rochas e poucos troncos. ' +
+      'IMPORTANTE — sugira espécies ESPECÍFICAS, NUNCA genéricos: "Jack Dempsey" (Rocio octofasciata), "Ciclídeo boca de fogo" (Thorichthys meeki), ' +
+      '"Tilápia do Nilo" (Oreochromis niloticus), "Acará-da-floresta" (Mesonauta festivus), vivíparos "Guppy" (Poecilia reticulata), ' +
+      '"Plati" (Xiphophorus maculatus), "Molinésia" (Poecilia sphenops), "Espada" (Xiphophorus hellerii). ' +
+      'Escolha 4 a 8 espécies compatíveis, com quantidades realistas para o volume.',
+    asiatica:
+      'Asiática (rios e pântanos do Sudeste Asiático): água levemente ácida a neutra, fluxo lento ou estagnado, vegetação abundante. ' +
+      'IMPORTANTE — sugira espécies ESPECÍFICAS, NUNCA genéricos: "Beta" (Betta splendens), "Gourami-pigmeu" (Trichogaster lalius), ' +
+      '"Gourami-beijador" (Helostoma temminckii), "Rasbora" (ex.: Rasbora heteromorpha), "Danio" (Danio rerio), "Barbo" (Puntius tetrazona), ' +
+      '"Cobrinha kuhli" (Pangio kuhlii), "Garra/flathead". ' +
+      'Flora: Cryptocorynes, higrófilas (Hygrophila) e samambaias de Java (Microsorum). ' +
+      '(Há também a variação de correnteza/hillstream: água fria, muito oxigenada, correnteza forte; cobrinhas kuhli e peixes-ventosa (Gastromyzon).)',
+    africana:
+      'Africana (grandes lagos do Rift — Malawi, Tanganyika e Victoria): água muito alcalina (pH 7.8-8.6) e muito dura, decoração de rochas empilhadas, quase sem troncos. ' +
+      'IMPORTANTE — sugira espécies ESPECÍFICAS, NUNCA o genérico "ciclídeo do Malawi". Prefira nomes concretos e bem conhecidos de cada grupo: ' +
+      '"Aulonocara" (ex.: Aulonocara stuartgranti — "Peacock"), "golfinho do Malawi" (Cyrtocara moorii), "Labidochromis caeruleus" (Yellow Lab / "auratus" é outro, o Labidochromis é amarelo), ' +
+      '"Pseudotropheus zebra" / "Maylandia zebra" (Zebra), "Melanochromis auratus" (Auratus, listras amarelas e pretas), "Pseudotropheus acei" (Acei), "Tropheus" (Tanganyika), ' +
+      '"Altolamprologus compressiceps", "Lamprologus"/"Neolamprologus" (ex.: N. brichardi), "Julidochromis". ' +
+      'Escolha 3 a 6 espécies compatíveis entre si, com quantidades realistas para o volume, e indique o nome popular e o científico de cada uma. ' +
+      'Flora: quase inexistente (apenas Anúbias resistentes). ' +
+      '(Rios do oeste africano: água ácida a neutra, troncos e vegetação; kribensis (Pelvicachromis) e peixes-elefante (Gnathonemus).)',
+    australiana:
+      'Australiana/Papua Nova Guiné: água neutra a levemente alcalina, vegetação esparsa, boa iluminação. ' +
+      'IMPORTANTE — sugira espécies ESPECÍFICAS: "Arco-íris" (ex.: Melanotaenia boesemani, Melanotaenia praecox "arco-íris anão", ' +
+      'Melanotaenia lacustris "arco-íris do Lago Kutubu"), "Pseudo-mugil" (Pseudomugil furcatus), "Rhinogobius". ' +
+      'Escolha 4 a 8 espécies compatíveis, com quantidades realistas para o volume.',
+    primitiva:
+      'Peixes primitivos/antigos de água doce (fósseis vivos). IMPORTANTE — sugira espécies ESPECÍFICAS e icônicas: ' +
+      '"Bichir" / "Polypterus" (Polypterus senegalus, Polypterus delhezi, Polypterus ornatipinnis), "Protopterus" (Protopterus annectens, "peixe-pulmonado africano"), ' +
+      '"Peixe-espatula" (Polyodon spathula, "peixe-espátula"), "Peixe-faca" (Chitala ornata, "peixe-faca listrado"; Gymnotus, "sarapó"), ' +
+      '"Pirarucu" (Arapaima gigas), "Peixe-agulha" (Xenentodon cancila, "peixe-agulha asiático"), "Esturjão" (Acipenser, "sturgeon"), ' +
+      '"Celacanto" (Latimeria — note: é marinho, NÃO deve ser mantido em aquário de água doce; se o usuário pedir, oriente que é inviável em aquário), ' +
+      '"Arowana" (Osteoglossum bicirrhosum "arowana prata", Scleropages), "Peixe-elefante" (Gnathonemus petersii), "Tetra de vidro" (Gymnocharacinus). ' +
+      'Priorize espécies de água doce viáveis em aquário e compatíveis entre si; escolha 3 a 5 espécies com quantidades realistas para o volume. ' +
+      'Para espécies muito grandes (pirarucu, esturjão, arowana), verifique se o volume é suficiente e avise em "agua.nota" quando não for.',
+    exotica:
+      'Fauna exótica/diferenciada de água doce. IMPORTANTE — sugira espécies ESPECÍFICAS e incomuns: "Arco-íris" (Melanotaenia), ' +
+      '"Ciclídeo de Uaru" (Uaru amphiacanthoides), "Peixe-folha" (Polycentrus), "Nandus", "Ctenopoma" (Ctenopoma acutirostre), "Rasbora galaxy" (Danio margaritatus). ' +
+      'Escolha 3 a 6 espécies compatíveis, com quantidades realistas para o volume.',
+    nanofauna:
+      'Nanofauna (espécies pequenas, ideais para aquários nano de até ~40 L). IMPORTANTE — sugira espécies ESPECÍFICAS e pequenas: ' +
+      '"Tetra-cobre" (Hasemania nana), "Danio margaritatus" (Galaxy), "Boraras brigittae" (Micro-rasbora), "Microrasbora kubotai", ' +
+      '"Guppy-endler" (Poecilia wingei), "Otocinclus", "Camarão-red cherry" (Neocaridina davidi), "Caramujo-nero" (Neritina). ' +
+      'Escolha 4 a 8 espécies compatíveis e diminutas, com quantidades realistas para o volume.',
+    invertebrados:
+      'Aquário de invertebrados (com camarões, caramujos/ampularias, lagostas e, se quiser, poucos peixes pequenos compatíveis). ' +
+      'IMPORTANTE — sugira espécies ESPECÍFICAS e compatíveis: "Camarão-red cherry" (Neocaridina davidi), "Camarão-amano" (Caridina multidentata), ' +
+      '"Camarão-crystal" (Caridina cantonensis), "Camarão-blue velvet / blue dream" (Neocaridina davidi azul), "Lagosta azul da Flórida" (Procambarus clarkii, "blue lobster"), ' +
+      '"Lagosta anã" (Cambarellus), "Ampulária" (Pomacea bridgesii / Pomacea diffusa, "caramujo-mistério"), "Caramujo-zebra" (Vittina natalensis), ' +
+      '"Caramujo-nero" (Neritina), "Planorbis" (Planorbarius), "Caramujo-trombeta malaia" (Melanoides tuberculata), "Caranguejo de água doce" (Sesarma). ' +
+      'Atenção à compatibilidade: lagostas (Procambarus) predam camarões e podem destruir plantas — sugira apenas UM grande predador OU só camarões/caramujos, nunca misture lagosta grande com camarões. ' +
+      'Escolha 3 a 6 espécies compatíveis, com quantidades realistas para o volume, e avise em "agua.nota" sobre água (GH/KH e temperatura) adequada aos invertebrados escolhidos.',
+    sem:
+      'Sem preferência específica de biótopo — monte um aquário comunitário equilibrado, variado e compatível. ' +
+      'Sugira espécies ESPECÍFICAS de fácil manutenção (ex.: Neons, Corydoras, Otocinclus, guppys, tetras) com quantidades realistas para o volume.',
+  };
 
-  console.log(`[sugestao-aquario] litros=${volume} | tipo=${tipoAquario}`);
+  // Se o usuário marcar "sem preferência", o app escolhe uma das categorias de
+  // fauna aleatoriamente e monta o resultado com base nela.
+  const CATEGORIAS_FAUNA = Object.keys(BIOTOPOS).filter((k) => k !== 'sem');
+  let faunaEscolhida = tipoFauna || 'sem';
+  if (faunaEscolhida === 'sem' || !BIOTOPOS[faunaEscolhida]) {
+    faunaEscolhida = CATEGORIAS_FAUNA[Math.floor(Math.random() * CATEGORIAS_FAUNA.length)];
+  }
+
+  const biotopoTexto = `\nTipo de fauna / biótopo: ${BIOTOPOS[faunaEscolhida]}`;
+
+  const pergunta =
+    `Volume pretendido: ${volume} L.\nTipo de aquário: ${tipoAquario}.` +
+    biotopoTexto +
+    `\nMonte a sugestão completa de fauna, flora, água e equipamentos para este aquário novo.`;
+
+  console.log(`[sugestao-aquario] litros=${volume} | tipo=${tipoAquario} | fauna=${faunaEscolhida}`);
 
   try {
     const dados = await viaIAVision({
@@ -1493,6 +1714,7 @@ app.post('/sugestao-aquario', async (req, res) => {
     return res.json({
       litros: volume,
       tipo: tipoAquario,
+      tipoFauna: faunaEscolhida,
       fauna: Array.isArray(dados.fauna) ? dados.fauna : [],
       flora: Array.isArray(dados.flora) ? dados.flora : [],
       agua: dados.agua || {},
@@ -1598,39 +1820,48 @@ const PROMPT_CRONOGRAMA =
   'IMPORTANTE: como o aquário já existe e está estabilizado, NÃO inclua jejum inicial (dieta em branco nos primeiros dias). ' +
   'Jejum só deve ser usado em dias específicos se fizer sentido real para a saúde das espécies. ' +
   'Regras OBRIGATÓRIAS: ' +
-  '(1) AVALIE A ADEQUAÇÃO DAS RAÇÕES: cada ração do estoque traz especificações técnicas do fabricante (tipo, indicação, ' +
-  'princípios ativos, forma de uso). Verifique se a ração é compatível com a dieta, o porte e a boca da fauna. ' +
-  'Exemplos de incompatibilidade: ração onívora/flocos finos NÃO serve para um axolote carnívoro; ração herbívora não serve ' +
-  'para peixes carnívoros; grânulos grandes não servem para peixes de boca pequena. Use SOMENTE rações do estoque que sejam ' +
-  'ADEQUADAS à fauna. ' +
-  '(2) SE NENHUMA ração do estoque for adequada à fauna (ou todas forem incompatíveis), NÃO invente nem force o uso delas: ' +
-  'deixe "alimentacao" null nos dias, ative alerta.temAlerta explicando claramente por que as rações atuais não servem para ' +
-  'aquela fauna, e preencha "sugestoes" com até 3 alimentos adequados (baseado no conhecimento técnico e nas especificações ' +
-  'típicas dos fabricantes), cada um com nome, marca, tipo, indicação e o motivo da escolha. ' +
-  '(3) NO MÁXIMO UMA alimentação por dia. ' +
-  '(4) A quantidade deve considerar o número de peixes de cada espécie e o porte do aquário. ' +
-  '(5) Fertilizantes: use SOMENTE os do estoque e apenas se o aquário tiver plantas (flora) e for plantado. ' +
-  'Calcule a dose conforme a capacidade em litros do aquário e a quantidade de plantas, e distribua os ' +
-  'fertilizantes em dias específicos da semana, sem conflitar com o que já foi agendado. ' +
-  '(6) SEGURANÇA DA FAUNA (obrigatório): alguns fertilizantes são bons para as plantas mas TÓXICOS para certos animais. ' +
-  'NUNCA sugira fertilizantes com glutaraldeído/carbono líquido (ex.: Excel, EasyCarbo, produtos com "carbono líquido") ' +
-  'se a fauna tiver AXOLOTE ou INVERTEBRADOS (camarões, caramujos, lagostas, lagostins, siris/caranguejos). ' +
-  'NUNCA sugira fertilizantes com COBRE se houver invertebrados na fauna. ' +
-  'Se a flora indicaria esses produtos mas a fauna é sensível, NÃO os use: deixe de fora, ative ' +
-  'alerta.temAlerta explicando o motivo (fauna sensível) e mencione isso no resumo. ' +
+  '(1) CONSIDERE TODA A FAUNA: você recebe a lista de peixes com a quantidade de cada espécie (ex.: "Neon (10x)"). ' +
+  'Analise CADA espécie: porte, boca (pequena/média/grande), hábito (superfície, meio-d\u00e1gua, fundo), dieta ' +
+  '(carnívora, herbívora, onívora) e se há filhotes (alevinos) ou invertebrados (camarões, caramujos, lagostas) na fauna. ' +
+  'Peixes de fundo (coridoras, cascudos, botias, labeos) precisam de alimento que afunde (pastilha/tablete); ' +
+  'alevinos precisam de alimento fino/esfarelável; invertebrados têm necessidades específicas. ' +
+  '(2) FAÇA UM MIX ADEQUADO: se o estoque tiver rações que atendem faunas diferentes (ex.: flocos para onívoros de ' +
+  'superfície/meio + pastilha que afunda para peixes de fundo + alimento fino para alevinos/invertebrados), ' +
+  'COMBINE-AS ao longo da semana para que TODA a fauna seja alimentada corretamente. Preencha "alimentacao" com o ' +
+  'nome da ração e "observacoes" indicando a que público se destina (ex.: "pastilha para peixes de fundo"). ' +
+  'Se um dia precisar atender mais de um grupo, escolha a ração mais adequada OU combine no campo "alimentacao" ' +
+  'ex.: "Flocos + pastilha de fundo". ' +
+  '(3) AVALIE A ADEQUAÇÃO DE CADA RAÇÃO: verifique se a ração é compatível com a dieta, o porte e a boca da fauna. ' +
+  'Exemplos de incompatibilidade: ração onívora/flocos finos NÃO serve para um axolote carnívoro; ração herbívora não ' +
+  'serve para peixes carnívoros; grânulos grandes não servem para peixes de boca pequena; ração que só flutua não ' +
+  'alimenta peixes de fundo. Use SOMENTE rações do estoque ADEQUADAS à fauna. ' +
+  '(4) SE NENHUMA ração do estoque for adequada (ou todas incompatíveis), NÃO invente nem force o uso: deixe ' +
+  '"alimentacao" null nos dias, ative alerta.temAlerta explicando por que as rações atuais não servem para a fauna, ' +
+  'e preencha "sugestoes" com até 3 alimentos adequados (nome, marca, tipo, indicação e motivo da escolha). ' +
+  '(5) QUANTIDADE: considere o número de peixes de cada espécie e o porte do aquário. Não subalimente (evita brigas ' +
+  'por falta de comida) nem superalimente (evita sobrecarga de amônia/nitrito na água). ' +
+  '(6) FERTILIZANTES: use SOMENTE os do estoque e apenas se o aquário tiver plantas (flora) e for plantado. ' +
+  'Calcule a dose conforme a capacidade em litros e a quantidade de plantas, distribuindo em dias específicos. ' +
+  '(7) SEGURANÇA DA FAUNA (obrigatório): NUNCA sugira fertilizantes com glutaraldeído/carbono líquido se houver ' +
+  'AXOLOTE ou INVERTEBRADOS (camarões, caramujos, lagostas, lagostins, siris/caranguejos); NUNCA sugira com COBRE ' +
+  'se houver invertebrados. Se a flora indicaria esses produtos mas a fauna é sensível, deixe de fora, ative ' +
+  'alerta.temAlerta e mencione no resumo. ' +
+  '(8) JEJUM: jejum é benéfico para a saúde e reduz a sobrecarga da água. SUGIRA a quantidade de dias de jejum ' +
+  'adequada à fauna (peixes herbívoros/carnívoros de trato curto geralmente toleram 1 dia; espécies com trato ' +
+  'longo ou filhotes podem precisar de alimentação mais frequente e menos jejum). Se o usuário informou um dia ' +
+  'fixo de TPA ("tpaDia"), aquele dia DEVE ser de jejum obrigatoriamente (jejum true, observacoes mencionando "TPA"). ' +
+  'Se NÃO houver TPA informada, escolha 1 dia de jejum (aleatório entre os 7) adequado à fauna. ' +
   'Responda APENAS com JSON válido no formato: ' +
   '{"dias":[{"dia":"Segunda-feira","jejum":false,"alimentacao":"nome exato da ração do estoque (ou null)","quantidade":"ex: 1 pitada","observacoes":"breve dica"},...],' +
   '"fertilizantes":[{"produto":"nome exato do fertilizante do estoque","dose":"ex: 2,5 mL","frequencia":"ex: 2x por semana","dias":["Terça-feira","Sexta-feira"],"observacoes":"breve dica"}],' +
-  '"resumo":"resumo curto da estratégia",' +
+  '"resumo":"resumo curto da estratégia, citando como cada grupo da fauna foi alimentado",' +
   '"alerta":{"temAlerta":false,"titulo":"","mensagem":""},' +
   '"sugestoes":[{"nome":"nome do alimento","marca":"marca","tipo":"tipo","indicacao":"indicação do produto","motivo":"por que é adequado para a fauna"}]}. ' +
   'Os campos "dias" devem conter exatamente 7 itens, de Segunda-feira a Domingo. ' +
-  'Se houver rações adequadas no estoque, preencha os dias normalmente e deixe alerta.temAlerta false e sugestoes como lista vazia. ' +
-  'Se não houver ração adequada, deixe alimentacao null nos dias, ative alerta.temAlerta e preencha sugestoes. ' +
+  'Se houver rações adequadas, preencha os dias normalmente e deixe alerta.temAlerta false e sugestoes vazia. ' +
+  'Se não houver ração adequada, deixe alimentacao null, ative alerta.temAlerta e preencha sugestoes. ' +
   'Se não houver fertilizante ou plantas, deixe fertilizantes como lista vazia. ' +
-  'TPA (troca parcial de água): se o usuário informar um dia fixo de TPA ("tpaDia"), aquele dia deve ser ' +
-  'obrigatoriamente de JEJUM (jejum true) com observacoes mencionando "TPA" — nada de ração nesse dia, ' +
-  'para evitar estresse durante a troca de água.';
+  'Sempre inclua 1 dia de jejum (ou o dia de TPA, se informado) e deixe claro no resumo a estratégia para o bem-estar.';
 
 function montarResultadoCronograma(dados) {
   return {
@@ -1976,30 +2207,40 @@ async function viaIAVision({ imagem, systemPrompt, userText }) {
       const parts = [];
       if (base64 && prefixo) parts.push({ inline_data: { mime_type: prefixo, data: base64 } });
       parts.push({ text: userText });
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
-        {
-          method: 'POST',
-          signal: AbortSignal.timeout(AI_TIMEOUT_MS),
-          headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': process.env.GEMINI_API_KEY,
-          },
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts }],
-            systemInstruction: { parts: [{ text: systemPrompt }] },
-            generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 800 },
-          }),
+      // Retry com backoff para 429 (rate limit do plano free): tenta até 3x
+      // antes de cair para o próximo provedor.
+      let ultimaFalha = null;
+      for (let tentativa = 1; tentativa <= 3; tentativa += 1) {
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
+          {
+            method: 'POST',
+            signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': process.env.GEMINI_API_KEY,
+            },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts }],
+              systemInstruction: { parts: [{ text: systemPrompt }] },
+              generationConfig: { responseMimeType: 'application/json', maxOutputTokens: 1800 },
+            }),
+          }
+        );
+        if (res.ok) {
+          const json = await res.json();
+          const conteudo = json.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('');
+          if (!conteudo) throw new Error('Gemini: resposta vazia');
+          return JSON.parse(conteudo);
         }
-      );
-      if (!res.ok) {
         const texto = await res.text().catch(() => '');
-        throw new Error(`Gemini (HTTP ${res.status}): ${texto.slice(0, 300)}`);
+        ultimaFalha = new Error(`Gemini (HTTP ${res.status}): ${texto.slice(0, 300)}`);
+        if (res.status !== 429 && res.status !== 500 && res.status !== 503) break;
+        if (tentativa < 3) {
+          await new Promise((r) => setTimeout(r, 1500 * tentativa));
+        }
       }
-      const json = await res.json();
-      const conteudo = json.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('');
-      if (!conteudo) throw new Error('Gemini: resposta vazia');
-      return JSON.parse(conteudo);
+      throw ultimaFalha || new Error('Gemini: falha sem status');
     } catch (e) {
       console.error('Falha Gemini (visão):', e.message);
       erros.push(`Gemini: ${e.message}`);
@@ -2021,7 +2262,7 @@ async function viaIAVision({ imagem, systemPrompt, userText }) {
         body: JSON.stringify({
           model: 'gpt-4o-mini',
           response_format: { type: 'json_object' },
-          max_tokens: 800,
+          max_tokens: 1600,
           messages: [
             { role: 'system', content: systemPrompt },
             { role: 'user', content },
@@ -2379,22 +2620,35 @@ const CONCURSOS_UPLOADS_DIR = path.join(__dirname, 'public', 'concursos');
 if (!fs.existsSync(CONCURSOS_UPLOADS_DIR)) {
   fs.mkdirSync(CONCURSOS_UPLOADS_DIR, { recursive: true });
 }
+app.use('/concursos', (req, res, next) => {
+  // Deixa as rotas JSON (/concursos e /concursos/...) prevalecerem; só arquivos
+  // de imagem devem ser tratados pelo diretório estático.
+  if (!path.extname(req.path)) return next();
+  return express.static(CONCURSOS_UPLOADS_DIR, { maxAge: '1d' })(req, res, next);
+});
 
 // Estado público: se o admin não ativou, retorna null (a seção não aparece no app).
 app.get('/concursos', (req, res) => {
+  concursosStore.encerrarSeDivulgacaoExpirada();
   const config = concursosStore.obterConfig();
   if (!config || config.ativo !== true) {
     return res.json({ ativo: false, config: null });
   }
   const agora = Date.now();
-  const fase =
-    agora < config.inscricaoAte
+  let fase =
+    agora < config.inscricaoDe
+      ? 'aguarda_inscricao'
+      : agora < config.inscricaoAte
       ? 'inscricoes'
+      : agora < config.votacaoDe
+      ? 'aguarda_votacao'
       : agora < config.votacaoAte
       ? 'votacao'
       : 'encerrado';
-  const ganhador = fase === 'encerrado' ? concursosStore.obterGanhador() : null;
-  const inscricoes = concursosStore.listarInscricoes().map((i) => ({
+  const ganhador = concursosStore.obterGanhador();
+  if (ganhador) fase = 'finalizado';
+  const dispositivoId = String((req.query && req.query.dispositivoId) || '').trim();
+  const inscricoes = concursosStore.listarInscricoes().filter((i) => i.status === 'aprovado').map((i) => ({
     id: i.id,
     nome: i.nome || '',
     apelido: i.apelido || '',
@@ -2405,16 +2659,20 @@ app.get('/concursos', (req, res) => {
     ativo: true,
     config: {
       categoria: config.categoria || '',
+      regra: config.regra || '',
       premio: config.premio || '',
+      patrocinador: config.patrocinador || '',
+      url: config.url || '',
       inscricaoDe: config.inscricaoDe || 0,
       inscricaoAte: config.inscricaoAte || 0,
       votacaoDe: config.votacaoDe || 0,
       votacaoAte: config.votacaoAte || 0,
-      linkVotacao: config.linkVotacao || '',
+       linkVotacao: config.linkVotacao || `${urlBasePublica(req).replace(/\/$/, '')}/concurso/votacao`,
       ganhadorDeclarado: !!config.ganhadorDeclarado,
     },
     fase,
     inscricoes,
+    meuStatus: dispositivoId ? concursosStore.statusDeDispositivo(dispositivoId) : null,
     ganhador: ganhador
       ? {
           inscricaoId: ganhador.inscricaoId,
@@ -2432,10 +2690,15 @@ app.get('/concursos', (req, res) => {
 // Config + inscrições completas (painel do admin).
 app.get('/concursos/admin', (req, res) => {
   if (!exigirAdmin(req, res)) return;
+  concursosStore.encerrarSeDivulgacaoExpirada();
+  const config = concursosStore.obterConfig();
   res.json({
-    config: concursosStore.obterConfig(),
+    config: config
+      ? { ...config, linkVotacao: config.linkVotacao || `${urlBasePublica(req).replace(/\/$/, '')}/concurso/votacao` }
+      : null,
     inscricoes: concursosStore.listarInscricoes(),
     ganhador: concursosStore.obterGanhador(),
+    historico: concursosStore.obterHistorico(),
   });
 });
 
@@ -2445,7 +2708,10 @@ app.put('/concursos/config', (req, res) => {
   const config = {
     ativo: c.ativo !== false,
     categoria: String(c.categoria || '').trim(),
+    regra: String(c.regra || '').trim(),
     premio: String(c.premio || '').trim(),
+    patrocinador: String(c.patrocinador || '').trim(),
+    url: String(c.url || '').trim(),
     inscricaoDe: Number(c.inscricaoDe) || 0,
     inscricaoAte: Number(c.inscricaoAte) || 0,
     votacaoDe: Number(c.votacaoDe) || 0,
@@ -2478,23 +2744,23 @@ app.post('/concursos/inscricao', async (req, res) => {
   // Uma inscrição por dispositivo.
   const jaInscrito = concursosStore
     .listarInscricoes()
-    .some((i) => String(i.dispositivoId || '') === String(dispositivoId || ''));
+    .some((i) => String(i.dispositivoId || '') === String(dispositivoId || '') && i.status !== 'rejeitado');
   if (jaInscrito) {
-    return res.status(400).json({ erro: 'JÁ_INSCRITO', motivo: 'Este dispositivo já enviou uma foto para o concurso.' });
+    return res.status(400).json({ erro: 'JÁ_INSCRITO', motivo: 'Este dispositivo já possui uma inscrição aprovada ou em avaliação.' });
   }
 
   const base64 = imagem.includes('base64,') ? imagem.split('base64,')[1] : imagem;
   const prefixo = imagem.match(/^data:([^;]+);base64,/) ? imagem.match(/^data:([^;]+);base64,/)[1] : 'image/jpeg';
   const dataUrl = `data:${prefixo};base64,${base64}`;
 
-  // Validação: só fotos de peixes/aquários.
+  // Validação: só fotos do AQUÁRIO INTEIRO (concurso).
   const provedores = semChavesValidacao();
   let valida = false;
   let motivo = '';
   if (provedores.length > 0) {
     if (process.env.GEMINI_API_KEY) {
       try {
-        const r = await validarFotoGemini(base64, prefixo, PROMPT_VALIDACAO_AQUARIO);
+        const r = await validarFotoGemini(base64, prefixo, PROMPT_VALIDACAO_CONCURSO);
         valida = r.valida;
         motivo = r.motivo || '';
       } catch (e) {
@@ -2503,7 +2769,7 @@ app.post('/concursos/inscricao', async (req, res) => {
     }
     if (!valida && process.env.OPENAI_API_KEY) {
       try {
-        const r = await validarFotoOpenAI(dataUrl, PROMPT_VALIDACAO_AQUARIO);
+        const r = await validarFotoOpenAI(dataUrl, PROMPT_VALIDACAO_CONCURSO);
         valida = r.valida;
         motivo = r.motivo || '';
       } catch (e) {
@@ -2513,7 +2779,7 @@ app.post('/concursos/inscricao', async (req, res) => {
     if (!valida) {
       return res.status(422).json({
         codigo: 'foto_invalida',
-        erro: motivo || 'A foto precisa mostrar um peixe de água doce ou um aquário.',
+        erro: motivo || 'A foto precisa mostrar o aquário inteiro em cena, não apenas um peixe.',
       });
     }
   }
@@ -2567,54 +2833,105 @@ app.post('/concursos/ganhador', (req, res) => {
   res.json({ ok: true, ganhador: g });
 });
 
+app.post('/concursos/encerrar', (req, res) => {
+  if (!exigirAdmin(req, res)) return;
+  const config = concursosStore.obterConfig() || {};
+  const inscricoes = concursosStore.listarInscricoes();
+  const ganhador = concursosStore.obterGanhador();
+  const fotoVencedor = ganhador ? String(ganhador.inscricao.foto || '').split('/').pop() : '';
+  for (const inscricao of inscricoes) {
+    const arquivo = String(inscricao.foto || '').split('/').pop();
+    if (arquivo && arquivo !== fotoVencedor && /^concurso-.*\.\w+$/.test(arquivo)) {
+      try {
+        fs.unlinkSync(path.join(CONCURSOS_UPLOADS_DIR, arquivo));
+      } catch (e) {
+        console.warn('Falha ao apagar foto ao finalizar concurso:', e.message);
+      }
+    }
+  }
+  const historico = concursosStore.encerrarConcurso({
+    categoria: config.categoria || '',
+    premio: config.premio || '',
+    inscricaoDe: config.inscricaoDe || 0,
+    inscricaoAte: config.inscricaoAte || 0,
+    votacaoDe: config.votacaoDe || 0,
+    votacaoAte: config.votacaoAte || 0,
+    encerradoEm: Date.now(),
+    ganhador: ganhador
+      ? {
+          nome: ganhador.inscricao.nome || '',
+          apelido: ganhador.inscricao.apelido || '',
+          votos: ganhador.inscricao.votos || 0,
+          foto: ganhador.inscricao.foto || '',
+          premio: config.premio || '',
+        }
+      : null,
+  });
+  res.json({ ok: true, historico });
+});
+
+app.post('/concursos/aprovar', (req, res) => {
+  if (!exigirAdmin(req, res)) return;
+  const { inscricaoId } = req.body || {};
+  const inscricao = concursosStore.atualizarInscricao(inscricaoId, { status: 'aprovado', motivo: '' });
+  if (!inscricao) return res.status(404).json({ erro: 'Inscrição não encontrada.' });
+  res.json({ ok: true, inscricao });
+});
+
+app.post('/concursos/rejeitar', (req, res) => {
+  if (!exigirAdmin(req, res)) return;
+  const { inscricaoId, motivo } = req.body || {};
+  const inscricao = concursosStore.atualizarInscricao(inscricaoId, {
+    status: 'rejeitado',
+    motivo: String(motivo || '').trim(),
+  });
+  if (!inscricao) return res.status(404).json({ erro: 'Inscrição não encontrada.' });
+  res.json({ ok: true, inscricao });
+});
+
+app.delete('/concursos/inscricao/:id', (req, res) => {
+  if (!exigirAdmin(req, res)) return;
+  const inscricao = concursosStore.obterInscricao(req.params.id);
+  if (!inscricao) return res.status(404).json({ erro: 'Inscrição não encontrada.' });
+  const arquivo = String(inscricao.foto || '').split('/').pop();
+  if (arquivo && /^concurso-.*\.\w+$/.test(arquivo)) {
+    try {
+      fs.unlinkSync(path.join(CONCURSOS_UPLOADS_DIR, arquivo));
+    } catch (e) {
+      console.warn('Falha ao apagar foto excluída:', e.message);
+    }
+  }
+  concursosStore.removerInscricao(req.params.id);
+  res.json({ ok: true });
+});
+
 // ============================ FIM CONCURSOS ============================
 
 // ============================ TELEMETRIA ============================
 
 // Recebe um evento de uso de seção (ex.: usuário abriu o Identificador).
 app.post('/telemetria/secao', (req, res) => {
-  const { secao, plano } = req.body || {};
+  const { secao } = req.body || {};
   const nome = String(secao || '').trim();
   if (!nome) return res.status(400).json({ erro: 'Envie o campo "secao".' });
-  telemetriaStore.registrarSecao(nome.slice(0, 60), plano);
+  telemetriaStore.registrarSecao(nome.slice(0, 60));
   res.json({ ok: true });
 });
 
 // Recebe o perfil de um aquário cadastrado/atualizado (para estatísticas).
 app.post('/telemetria/aquario', (req, res) => {
-  const { aquario, plano } = req.body || {};
+  const { aquario } = req.body || {};
   if (!aquario || typeof aquario !== 'object') {
     return res.status(400).json({ erro: 'Envie o campo "aquario".' });
   }
-  telemetriaStore.registrarPerfilAquario(aquario, plano);
+  telemetriaStore.registrarPerfilAquario(aquario);
   res.json({ ok: true });
 });
 
 // Resumo estatístico (painel do admin).
 app.get('/telemetria/admin', (req, res) => {
   if (!exigirAdmin(req, res)) return;
-  const plano = String(req.query.plano || '');
-  const de = req.query.de ? Number(req.query.de) : null;
-  const ate = req.query.ate ? Number(req.query.ate) : null;
-  res.json(telemetriaStore.resumo({ plano, de, ate }));
-});
-
-// Recebe o consumo de IA (uma consulta ou lote) de um dispositivo, com o plano.
-app.post('/ia/uso', (req, res) => {
-  const { dispositivoId, plano, qtd, custo } = req.body || {};
-  const quantidade = Number(qtd) || 0;
-  if (!(quantidade > 0)) return res.status(400).json({ erro: 'Envie qtd > 0.' });
-  iaUsoStore.registrar({ dispositivoId, plano, qtd: quantidade, custo: Number(custo) || 0 });
-  res.json({ ok: true });
-});
-
-// Resumo do uso de IA por plano e período (painel do admin).
-app.get('/ia/uso/admin', (req, res) => {
-  if (!exigirAdmin(req, res)) return;
-  const plano = String(req.query.plano || '');
-  const de = req.query.de ? Number(req.query.de) : null;
-  const ate = req.query.ate ? Number(req.query.ate) : null;
-  res.json(iaUsoStore.resumo({ plano, de, ate }));
+  res.json(telemetriaStore.resumo());
 });
 
 // ============================ FIM TELEMETRIA ============================
@@ -2642,6 +2959,55 @@ function lerCatalogo(nome) {
   } catch (e) {
     return null;
   }
+}
+
+// Monta a lista de espécies conhecidas do app (fauna + flora) para embutir no
+// prompt de identificação. Isso faz a IA escolher dentro do catálogo do app —
+// reduz espécies inventadas e aumenta a precisão da ficha devolvida.
+// Prioriza: (1) espécies com ficha completa (especies.json), (2) flora,
+// (3) fauna brasileira e complementar com nome científico real. Deduplica por
+// nome científico e limita a LIMITE_NOMES (800) para caber no contexto sem
+// inflar o custo por chamada.
+const LIMITE_NOMES_PROMPT = 800;
+let listaEspeciesPrompt = null;
+function obterListaEspeciesPrompt() {
+  if (listaEspeciesPrompt) return listaEspeciesPrompt;
+  const especies = lerCatalogo('especies') || [];
+  const flora = lerCatalogo('flora') || [];
+  const faunaBrasileira = lerCatalogo('faunaBrasileira') || [];
+  const faunaComplementar = lerCatalogo('faunaComplementar') || [];
+
+  const item = (e) => ({ nc: e.nomeComum || e.nome || '', ci: e.nomeCientifico || '' });
+  // Fauna brasileira tem agregados ("…– 110 Espécies") sem nome científico —
+  // filtra apenas entradas com nome científico real.
+  const fbReais = faunaBrasileira
+    .map(item)
+    .filter((x) => x.ci.trim() && !/esp[eê]cies|f[ií]cheiros|fam[ií]lia/i.test(x.nc));
+
+  const prioridade = [
+    ...especies.map(item),
+    ...flora.map(item),
+    ...faunaComplementar.map(item),
+    ...fbReais,
+  ];
+
+  const vistos = new Set();
+  const unicos = [];
+  for (const x of prioridade) {
+    const chave = (x.ci || x.nc)
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .trim();
+    if (!chave || vistos.has(chave)) continue;
+    vistos.add(chave);
+    unicos.push(x);
+    if (unicos.length >= LIMITE_NOMES_PROMPT) break;
+  }
+
+  const txt = unicos.map((x) => `${x.nc.trim()} (${x.ci.trim()})`).join(', ');
+  listaEspeciesPrompt = txt || 'nenhuma';
+  return listaEspeciesPrompt;
 }
 
 app.get('/catalogos', (req, res) => {
@@ -2847,6 +3213,104 @@ app.post('/pergunta', async (req, res) => {
   }
 });
 
+app.post('/avaliacao-graficos', async (req, res) => {
+  const { mediacoes, nomeAquario } = req.body || {};
+  if (!Array.isArray(mediacoes) || mediacoes.length === 0) {
+    return res.status(400).json({ erro: 'Envie as medições de parâmetros da água.' });
+  }
+  const textoMedicoes = mediacoes
+    .slice(-10)
+    .map((m, i) => {
+      const vals = (m && m.valores) || {};
+      const linha = Object.keys(vals)
+        .filter((k) => vals[k] !== undefined && vals[k] !== null && vals[k] !== '')
+        .map((k) => `${k}: ${vals[k]}`)
+        .join(', ');
+      const data = m.criadoEm ? new Date(m.criadoEm).toLocaleDateString('pt-BR') : `medida ${i + 1}`;
+      return `${data} — ${linha || 'sem dados'}`;
+    })
+    .join('\n');
+  const texto = `Aquário: ${nomeAquario || 'não informado'}.\nÚltimas medições:\n${textoMedicoes}`;
+
+  try {
+    const dados = await viaIAVision({
+      imagem: null,
+      systemPrompt: PROMPT_AVALIACAO_GRAFICOS,
+      userText: texto,
+    });
+    if (dados && dados.resposta) {
+      return res.json({ resposta: String(dados.resposta) });
+    }
+    return res.status(502).json({ erro: 'Não foi possível gerar a avaliação dos gráficos.' });
+  } catch (e) {
+    console.error('Falha ao avaliar gráficos:', e.message);
+    return res.status(502).json({ erro: e.message });
+  }
+});
+
+app.post('/alimentos-recomendados', async (req, res) => {
+  const fauna = Array.isArray(req.body && req.body.fauna) ? req.body.fauna : [];
+  try {
+    const lista = fauna
+      .map((f) => `${f.nomeComum || f.nome || 'peixe'} (${f.dieta || 'dieta não informada'})`)
+      .join(', ');
+    const dados = await viaIAVision({
+      imagem: null,
+      systemPrompt:
+        'Recomende alimentos para peixes de aquário de água doce. Responda apenas JSON com uma chave ' +
+        'recomendacoes, um array de até 6 itens contendo marca, nome, tipo, indicacao e motivo.',
+      userText: lista || 'Recomende alimentos de rotina para aquário comunitário.',
+    });
+    if (dados && Array.isArray(dados.recomendacoes)) {
+      return res.json({ recomendacoes: dados.recomendacoes.slice(0, 6), provedor: dados.provedor || 'IA' });
+    }
+  } catch (e) {
+    console.error('Falha ao recomendar alimentos (IA):', e.message);
+  }
+
+  const produtos = catalogosStore.listar('produtos');
+  const recomendacoes = produtos.slice(0, 6).map((p) => ({
+    marca: p.marca || '',
+    nome: p.nome || '',
+    tipo: p.tipo || '',
+    indicacao: p.indicacao || '',
+    motivo: p.indicacao
+      ? `Adequado para a dieta da fauna: ${p.indicacao}.`
+      : 'Alimento de rotina adequado para peixes de aquário comunitário.',
+  }));
+  return res.json({ recomendacoes, provedor: 'local', offline: true });
+});
+
+app.post('/sugestoes-ajuste', async (req, res) => {
+  const corpo = req.body || {};
+  try {
+    const dados = await viaIAVision({
+      imagem: null,
+      systemPrompt:
+        'Analise parâmetros de água de aquário doce e responda apenas JSON com a chave resposta. ' +
+        'Dê orientações práticas e seguras, com ajustes graduais.',
+      userText: `Parâmetros/situação do aquário: ${JSON.stringify(corpo)}. Sugira ajustes.`,
+    });
+    if (dados && typeof dados.resposta === 'string' && dados.resposta.trim()) {
+      return res.json({ resposta: dados.resposta });
+    }
+  } catch (e) {
+    console.error('Falha ao gerar sugestões de ajuste (IA):', e.message);
+  }
+
+  const alertas = (corpo.alertas || []).map((a) => String(a.campo || a.titulo || '').toLowerCase());
+  const resumo = String(corpo.resumo || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const tem = (palavra) => alertas.includes(palavra) || resumo.includes(palavra);
+  const linhas = [];
+  if (tem('temperatura')) linhas.push('Ajuste a temperatura gradualmente, no máximo 1-2 °C por dia.');
+  if (tem('ph')) linhas.push('Evite variações bruscas de pH e corrija aos poucos.');
+  if (tem('amonia') || tem('amônia')) linhas.push('Faça uma TPA de 20-30%, reduza a alimentação e confira o filtro biológico.');
+  if (tem('nitrito')) linhas.push('Faça TPAs e reduza a alimentação até o ciclo biológico estabilizar.');
+  if (tem('nitrato')) linhas.push('Faça TPAs regulares e reduza o excesso de ração.');
+  if (linhas.length === 0) linhas.push('Repita as medições em 24-48h e mantenha a rotina de TPAs.');
+  return res.json({ resposta: `Sugestões rápidas para ajustar a água:\n\n${linhas.map((l) => `• ${l}`).join('\n')}`, _offline: true });
+});
+
 app.post('/admin/login', (req, res) => {
   const { chave } = req.body || {};
   if (!chave || chave !== ADMIN_KEY) {
@@ -2883,6 +3347,10 @@ app.get('/admin-ofertas', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'admin', 'ofertas.html'));
 });
 
+app.get('/admin-usuarios', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin', 'usuarios.html'));
+});
+
 // ============================ TESTER (limite de testadores) ============================
 // O app consulta esta rota no boot (ambiente tester) para validar o acesso:
 //  - no máximo LIMITE_TESTERS dispositivos distintos;
@@ -2915,6 +3383,192 @@ app.delete('/tester/admin/:dispositivoId', (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------------------------------------------------------------------------
+// PAGAMENTOS WEB (Mercado Pago Checkout Pro)
+// Fluxo: app -> POST /pagamentos/criar -> abre init_point no navegador ->
+// Mercado Pago chama POST /pagamentos/webhook -> app consulta
+// GET /pagamentos/status/:ref e ativa o benefício localmente.
+// ---------------------------------------------------------------------------
+
+async function mpChamar(caminho, opcoes = {}) {
+  const r = await fetch(MP_API + caminho, {
+    ...opcoes,
+    headers: {
+      Authorization: `Bearer ${MP_TOKEN}`,
+      'Content-Type': 'application/json',
+      ...(opcoes.headers || {}),
+    },
+  });
+  let corpo = null;
+  try {
+    corpo = await r.json();
+  } catch (e) {}
+  return { ok: r.ok, status: r.status, corpo };
+}
+
+app.post('/pagamentos/criar', async (req, res) => {
+  if (!MP_TOKEN) return res.status(503).json({ ok: false, codigo: 'INDISPONIVEL' });
+  const { produtoId, email, dispositivoId } = req.body || {};
+  const criado = pagamentosStore.criar({ produtoId, email, dispositivoId });
+  if (!criado.ok) return res.status(400).json({ ok: false, codigo: criado.erro });
+  const p = criado.registro;
+
+  try {
+    const preferencia = {
+      items: [
+        {
+          id: produtoId,
+          title: `AquarIApp — ${p.rotulo}`,
+          quantity: 1,
+          unit_price: p.preco,
+          currency_id: 'BRL',
+        },
+      ],
+      external_reference: criado.ref,
+      payer: p.email ? { email: p.email } : undefined,
+      back_urls: {
+        success: `${PAGAMENTO_RETORNO}?pagamento=${criado.ref}`,
+        pending: `${PAGAMENTO_RETORNO}?pagamento=${criado.ref}`,
+        failure: `${PAGAMENTO_RETORNO}?pagamento=${criado.ref}`,
+      },
+    };
+
+    // notification_url precisa ser a URL pública absoluta do backend
+    // (defina PAGAMENTO_WEBHOOK_URL no painel do Render).
+    if (process.env.PAGAMENTO_WEBHOOK_URL) {
+      preferencia.notification_url = process.env.PAGAMENTO_WEBHOOK_URL;
+    }
+
+    const r = await mpChamar('/checkout/preferences', {
+      method: 'POST',
+      body: JSON.stringify(preferencia),
+    });
+    if (!r.ok || !r.corpo || !r.corpo.init_point) {
+      console.error('[pagamentos] erro ao criar preferência:', r.status, JSON.stringify(r.corpo || {}).slice(0, 500));
+      return res.status(502).json({ ok: false, codigo: 'ERRO_GATEWAY' });
+    }
+    res.json({ ok: true, ref: criado.ref, init_point: r.corpo.init_point });
+  } catch (e) {
+    console.error('[pagamentos] exceção ao criar preferência:', e.message);
+    res.status(502).json({ ok: false, codigo: 'ERRO_GATEWAY' });
+  }
+});
+
+// Notificação do Mercado Pago. Consulta o pagamento na API oficial antes de
+// confiar no status (nunca marca pago só pelo corpo do webhook).
+app.post('/pagamentos/webhook', async (req, res) => {
+  try {
+    const q = req.query || {};
+    const b = req.body || {};
+    const tipo = q.type || q.topic || b.type || '';
+    const idPagamento = (q['data.id'] || (b.data && b.data.id)) + '';
+    if ((tipo === 'payment' || tipo === '') && idPagamento && /^\d+$/.test(idPagamento)) {
+      if (!MP_TOKEN) return res.sendStatus(200);
+      const r = await mpChamar(`/v1/payments/${idPagamento}`);
+      const pg = r.corpo;
+      const ref = pg && pg.external_reference;
+      if (r.ok && ref && pg.status === 'approved') {
+        pagamentosStore.marcarPago(ref, {
+          mpPaymentId: idPagamento,
+          metodo:
+            pg.payment_method_id +
+            (pg.payment_type_id === 'credit_card' ? ' (crédito)' : pg.payment_type_id === 'debit_card' ? ' (débito)' : ''),
+        });
+        // Mantém o registro de contas em sync com a assinatura paga
+        // (lista de transmissão do admin atualiza sozinha).
+        try {
+          const registro = pagamentosStore.statusPorRef(ref);
+          if (registro && registro.email && registro.tipo) {
+            const plano = String(registro.tipo).includes('trimestral')
+              ? 'trimestral'
+              : String(registro.tipo).includes('mensal')
+                ? 'mensal'
+                : null;
+            if (plano) contasStore.definirPlano({ email: registro.email, plano });
+          }
+        } catch (e2) {
+          console.error('[pagamentos] sync contas:', e2.message);
+        }
+      }
+    }
+  } catch (e) {
+    console.error('[pagamentos] webhook:', e.message);
+  }
+  // Sempre 200 para o MP não reenviar indefinidamente em caso de erro pontual.
+  res.sendStatus(200);
+});
+
+// Consulta do app: retorna o estado da compra por ref.
+app.get('/pagamentos/status/:ref', (req, res) => {
+  const registro = pagamentosStore.statusPorRef(req.params.ref);
+  if (!registro) return res.status(404).json({ ok: false, codigo: 'NAO_ENCONTRADO' });
+  res.json({
+    ok: true,
+    ref: registro.ref,
+    status: registro.status,
+    tipo: registro.tipo,
+    rotulo: registro.rotulo,
+    preco: registro.preco,
+    validadeAte: registro.validadeAte || null,
+  });
+});
+
+// Painel admin: últimas cobranças.
+app.get('/pagamentos/admin', (req, res) => {
+  if (!exigirAdmin(req, res)) return;
+  res.json({ pagamentos: pagamentosStore.listarTodos() });
+});
+
+// ---------------------------------------------------------------------------
+// CONTAS (registro central para a lista de transmissão do admin)
+// O app chama /contas/registrar logo após verificar o email; preferências e
+// cancelamentos mantêm o registro sempre atualizado — sem importar lista à mão.
+// ---------------------------------------------------------------------------
+
+const limiteContas = rateLimit({ windowMs: 60 * 1000, max: 30 });
+
+app.post('/contas/registrar', limiteContas, (req, res) => {
+  const { email, dispositivoId, receberOfertas } = req.body || {};
+  const conta = contasStore.registrarOuAtualizar({ email, dispositivoId, receberOfertas });
+  if (!conta) return res.status(400).json({ ok: false, codigo: 'EMAIL_INVALIDO' });
+  res.json({ ok: true });
+});
+
+app.post('/contas/preferencias', limiteContas, (req, res) => {
+  const { email, receberOfertas } = req.body || {};
+  const conta = contasStore.definirPreferencias({ email, receberOfertas });
+  if (!conta) return res.status(404).json({ ok: false, codigo: 'CONTA_NAO_ENCONTRADA' });
+  res.json({ ok: true, receberOfertas: conta.receberOfertas });
+});
+
+app.post('/contas/cancelar', limiteContas, (req, res) => {
+  const { email } = req.body || {};
+  const conta = contasStore.definirPlano({ email, plano: 'basico' });
+  if (!conta) return res.status(404).json({ ok: false, codigo: 'CONTA_NAO_ENCONTRADA' });
+  res.json({ ok: true });
+});
+
+// Painel admin: usuários separados por segmento + exportação da lista de
+// transmissão. A lista é gerada na hora a partir do registro — novos usuários,
+// mudanças de plano e cancelamentos aparecem automaticamente.
+app.get('/contas/admin', (req, res) => {
+  if (!exigirAdmin(req, res)) return;
+  const segmento = String((req.query && req.query.segmento) || 'todos');
+  if (!['todos', 'assinantes', 'basicos', 'ofertas', 'cancelados'].includes(segmento)) {
+    return res.status(400).json({ erro: 'Segmento inválido.' });
+  }
+  const contas = contasStore.listar(segmento);
+  if (String((req.query && req.query.formato) || '') === 'csv') {
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="lista-transmissao-${segmento}.csv"`
+    );
+    return res.send('\uFEFF' + contasStore.paraCSV(contas));
+  }
+  res.json({ ok: true, total: contas.length, contas });
+});
+
 if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`[AquarIApp Server] rodando em http://localhost:${PORT}`);
@@ -2922,6 +3576,7 @@ if (require.main === module) {
     console.log(`Admin: http://localhost:${PORT}/admin`);
     console.log(`  Ofertas:    /admin-ofertas`);
     console.log(`  Catálogos:  /admin-catalogos`);
+    console.log(`  Usuários:   /admin-usuarios`);
   });
 }
 module.exports = { app, viaGemini, viaPlantNet, viaOpenAI, validarFotoGemini, validarFotoOpenAI, filtrarCronogramaSeguro, detectarFaunaSensivel };

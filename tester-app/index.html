@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
+    <meta name="google" content="notranslate" />
+    <meta name="description" content="AquarIApp — identificador de peixes, plantas e doenças de aquário com assistente de IA." />
+    <meta name="theme-color" content="#00b4d8" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="AquarIApp" />
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <title>AquarIApp</title>
+    <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
+    <style id="expo-reset">
+      /* These styles make the body full-height */
+      html,
+      body {
+        height: 100%;
+      }
+      /* These styles disable body scrolling if you are using <ScrollView> */
+      body {
+        overflow: hidden;
+      }
+      /* These styles make the root element full-height */
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+      }
+    </style>
+  <link rel="icon" href="/favicon.ico"/></head>
+
+  <body>
+    <!-- Use static rendering with Expo Router to support running without JavaScript. -->
+    <noscript>
+      You need to enable JavaScript to run this app.
+    </noscript>
+    <!-- The root element for your Expo app. -->
+    <div id="root"></div>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('/sw.js').catch(function (e) {
+            console.warn('SW registration falhou:', e);
+          });
+        });
+      }
+    </script>
+    <script>
+      // Captura o evento de instalação do PWA (Chrome/Edge/Android).
+      // Guarda o prompt e avisa o app (que mostra o botão "Instalar").
+      (function () {
+        window.aquariappInstallPrompt = null;
+        var readyp = 'aquariapp-install-ready';
+        window.addEventListener('beforeinstallprompt', function (e) {
+          e.preventDefault();
+          window.aquariappInstallPrompt = e;
+          window.dispatchEvent(new Event(readyp));
+        });
+        window.addEventListener('appinstalled', function () {
+          window.aquariappInstallPrompt = null;
+          window.dispatchEvent(new Event('aquariapp-installed'));
+        });
+      })();
+    </script>
+  <script src="/_expo/static/js/web/index-55cbd46bc4686cba9979025c29867bb3.js" defer></script>
+</body>
+</html>

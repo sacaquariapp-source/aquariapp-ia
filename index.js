@@ -9,6 +9,12 @@ const pathApp = require('path');
 const TESTER_APP_DIR = pathApp.join(__dirname, 'tester-app');
 const TESTER_INDEX = pathApp.join(TESTER_APP_DIR, 'index.html');
 const TEM_TESTER_APP = (() => { try { return fsApp.existsSync(TESTER_INDEX); } catch (e) { return false; } })();
+
+// Kill-switch do app dos testadores (REVERSÍVEL). A SPA de testes só é servida
+// quando a env SERVIR_TESTER=1 estiver definida no ambiente. Padrão = DESLIGADO:
+// a raiz '/' responde apenas o JSON de status (API) e não entrega o app tester.
+// Para religar o teste, basta definir SERVIR_TESTER=1 no painel (redeploy automático).
+const SERVIR_TESTER = process.env.SERVIR_TESTER === '1';
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -37,7 +43,7 @@ const MP_TOKEN = process.env.MERCADO_PAGO_ACCESS_TOKEN || '';
 const MP_API = process.env.MP_API_BASE || 'https://api.mercadopago.com';
 // URL para onde o comprador volta depois de pagar (back_urls) — o app web
 // também consulta /pagamentos/status/:ref para ativar o benefício.
-const PAGAMENTO_RETORNO = process.env.PAGAMENTO_URL_RETORNO || 'https://tranquil-sable-8b2aa1.netlify.app';
+const PAGAMENTO_RETORNO = process.env.PAGAMENTO_URL_RETORNO || 'https://app.aquariapp.com.br';
 
 const otplib = require('otplib');
 const ADMIN_KEY = process.env.ADMIN_KEY || (process.env.NODE_ENV === 'production' ? '' : 'admin123');
@@ -795,7 +801,7 @@ async function validarFotoOpenAI(dataUrl, prompt) {
 app.get('/', (req, res) => {
   // Navegadores recebem o app dos testadores (mesma origem da IA: sem CORS).
   // Clientes de API/monitoramento continuam recebendo o JSON de status.
-  if (TEM_TESTER_APP && String(req.headers.accept || '').includes('text/html')) {
+  if (SERVIR_TESTER && TEM_TESTER_APP && String(req.headers.accept || '').includes('text/html')) {
     return res.sendFile(TESTER_INDEX);
   }
 // original:
@@ -3586,7 +3592,7 @@ if (require.main === module) {
 // Serve /_expo/*, /assets/*, /manifest.json, /favicon.ico, /sw.js e /icons/* da
 // pasta tester-app. A raiz '/' já entrega o index.html para navegadores (patch
 // no GET '/'), então o PWA e a IA convivem na MESMA origem (sem CORS).
-if (TEM_TESTER_APP) {
+if (SERVIR_TESTER && TEM_TESTER_APP) {
   app.use(express.static(TESTER_APP_DIR, { maxAge: '1h', index: false }));
 }
 

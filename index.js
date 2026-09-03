@@ -31,6 +31,8 @@ const whatsappStore = require('./whatsappStore');
 const whatsappApi = require('./whatsappApi');
 const concursosStore = require('./concursosStore');
 const telemetriaStore = require('./telemetriaStore');
+const iaUsoStore = require('./iaUsoStore');
+const pushStore = require('./pushStore');
 const testerStore = require('./testerStore');
 const cacheStore = require('./cacheStore');
 const pagamentosStore = require('./pagamentosStore');
@@ -916,6 +918,13 @@ async function classificarTipoGemini(base64, mime) {
   const tipo = String((dados && dados.tipo) || 'outro').toLowerCase();
   return tipo === 'fauna' || tipo === 'flora' ? tipo : 'outro';
 }
+
+// Endpoint leve para keep-alive externo (UptimeRobot, cron-job.org, Kaffeine,
+// etc.): resposta mínima para manter o Render free acordado 24/7, garantindo
+// que o scheduler de Web Push rode no horário mesmo com o app fechado.
+app.get('/ping', (req, res) => {
+  res.json({ ok: true, ts: Date.now() });
+});
 
 app.get('/', (req, res) => {
   // Navegadores recebem o app dos testadores (mesma origem da IA: sem CORS).
@@ -3563,6 +3572,67 @@ app.get('/telemetria/admin', (req, res) => {
   if (!exigirAdmin(req, res)) return;
   res.json(telemetriaStore.resumo());
 });
+
+// ============================ USO DE IA ============================
+
+// Recebe um consumo de IA do app (fire-and-forget): agrega por plano e período
+// para o painel admin. Falhas são silenciosas (o app não depende desta rota).
+app.post('/ia/uso', (req, res) => {
+  const { dispositivoId, plano, qtd, custo } = req.body || {};
+  iaUsoStore.registrar({ dispositivoId, plano, qtd, custo });
+  res.json({ ok: true });
+});
+
+// Resumo do uso de IA por plano e período (painel do admin).
+app.get('/ia/uso/admin', (req, res) => {
+  if (!exigirAdmin(req, res)) return;
+  const { plano = '', de = null, ate = null } = req.query || {};
+  res.json(
+    iaUsoStore.resumo({
+      plano: String(plano || ''),
+      de: de ? Number(de) : null,
+      ate: ate ? Number(ate) : null,
+    })
+  );
+});
+
+// ============================ FIM USO DE IA ============================
+
+// ============================ PUSH (Web Push) ============================
+
+// Registra/atualiza a subscription push do dispositivo (web/PWA).
+app.post('/push/registrar', (req, res) => {
+  const { dispositivoId, subscription } = req.body || {};
+  if (!dispositivoId || !subscription || !subscription.endpoint) {
+    return res.status(400).json({ erro: 'Envie dispositivoId e subscription.' });
+  }
+  pushStore.registrar({ dispositivoId: String(dispositivoId), subscription });
+  res.json({ ok: true, status: pushStore.resumo() });
+});
+
+// Agenda os disparos futuros do dispositivo: [{ ts, title, body }].
+app.post('/push/agendar', (req, res) => {
+  const { dispositivoId, triggers } = req.body || {};
+  if (!dispositivoId) {
+    return res.status(400).json({ erro: 'Envie dispositivoId.' });
+  }
+  pushStore.agendar({ dispositivoId: String(dispositivoId), triggers });
+  res.json({ ok: true });
+});
+
+// Status do push (painel/admin).
+app.get('/push/status', (req, res) => {
+  res.json(pushStore.resumo());
+});
+
+// Processa disparos vencidos a cada 30s enquanto o processo estiver de pé.
+if (require.main === module) {
+  setInterval(() => {
+    pushStore.processarDevidos().catch((e) => console.error('Falha no push scheduler:', e.message));
+  }, 30000);
+}
+
+// ============================ FIM PUSH ============================
 
 // ============================ FIM TELEMETRIA ============================
 

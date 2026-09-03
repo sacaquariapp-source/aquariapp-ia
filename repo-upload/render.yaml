@@ -1,0 +1,61 @@
+# Render.com blueprint — AquarIApp Backend
+# Suba a pasta `server/deploy-backend` num repositório Git e crie um Web Service
+# a partir deste arquivo (Render lê automaticamente) OU siga o README-deploy.md.
+services:
+  - type: web
+    name: aquariapp-ia
+    runtime: node
+    plan: free
+    buildCommand: npm install --omit=dev
+    startCommand: node index.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        value: gemini-3.6-flash
+      - key: PLANTNET_API_KEY
+        sync: false
+      - key: GOOGLE_VISION_API_KEY
+        sync: false
+      - key: FISHIAL_CLIENT_ID
+        sync: false
+      - key: FISHIAL_CLIENT_SECRET
+        sync: false
+      - key: TREFLE_TOKEN
+        sync: false
+      - key: SPECIESLINK_API_KEY
+        sync: false
+      - key: ROBOFLOW_API_KEY
+        sync: false
+      - key: ADMIN_KEY
+        sync: false
+      # URL pública do front (ex.: https://aquariapp.netlify.app)
+      - key: ALLOWED_ORIGINS
+        value: https://aquariapp.com.br,https://www.aquariapp.com.br,https://app.aquariapp.com.br,https://aquariapp-tester.pages.dev
+      # URL pública deste backend (ex.: https://aquariapp-ia.onrender.com)
+      - key: PUBLIC_BASE_URL
+        value: https://aquariapp-ia.onrender.com
+      - key: MERCADO_PAGO_ACCESS_TOKEN
+        sync: false
+      - key: PAGAMENTO_WEBHOOK_URL
+        value: https://aquariapp-ia.onrender.com/pagamentos/webhook
+      - key: PAGAMENTO_URL_RETORNO
+        value: https://app.aquariapp.com.br
+      # Kill-switch do app dos testadores (reversível): "1" = serve a SPA de
+      # testes na raiz, ausente/"0" = só API/JSON. Deixar "0" após os testes.
+      - key: SERVIR_TESTER
+        value: "0"
+      # Web Push (lembretes no PWA). VAPID gerado para o AquarIApp — público no
+      # front (obrigatório); privado fica apenas no servidor.
+      - key: VAPID_PUBLIC_KEY
+        value: BJUBi9irPLo6tNkRNI1txMECJhSDu-LoyShgDNIObpFHdriiBEH7ptxBMHRe_T2WHNqa-qd9yOw4Dm8rDZOsrug
+      - key: VAPID_PRIVATE_KEY
+        value: oKfWUiIqfGVYE0QqV4HESZiUal4SN7Nu-QtrkEDQWbM
+      - key: VAPID_SUBJECT
+        value: mailto:sac.aquariapp@gmail.com

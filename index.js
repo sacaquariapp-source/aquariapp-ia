@@ -685,7 +685,7 @@ async function viaOpenAI(imagem) {
 }
 
 async function viaGemini(base64, mime, textoExtra, sistemaPrompt) {
-  const modelo = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const modelo = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
   const system = sistemaPrompt || montarPromptSistema();
   const parts = [];
   if (base64) {
@@ -734,7 +734,7 @@ async function viaGemini(base64, mime, textoExtra, sistemaPrompt) {
 }
 
 async function validarFotoGemini(base64, mime, prompt) {
-  const modelo = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const modelo = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
     {
@@ -1541,7 +1541,7 @@ app.post('/compatibilidade', async (req, res) => {
 
   if (process.env.GEMINI_API_KEY) {
     try {
-      const modelo = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+      const modelo = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
       const resIA = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
         {
@@ -1659,7 +1659,7 @@ app.post('/sugestoes', async (req, res) => {
 
   if (process.env.GEMINI_API_KEY) {
     try {
-      const modelo = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+      const modelo = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
       const resIA = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
         {
@@ -2279,7 +2279,7 @@ async function diagnosticarComIA(imagem, estoqueMedicamentos, descricao, faunaSe
       if (base64) parts.push({ inline_data: { mime_type: prefixo, data: base64 } });
       parts.push({ text: userText });
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_MODEL || 'gemini-2.5-flash'}:generateContent`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${process.env.GEMINI_MODEL || 'gemini-3.6-flash'}:generateContent`,
         {
           method: 'POST',
           signal: AbortSignal.timeout(AI_TIMEOUT_MS),
@@ -2369,7 +2369,7 @@ async function viaIAVision({ imagem, systemPrompt, userText }) {
 
   if (process.env.GEMINI_API_KEY) {
     try {
-      const modelo = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+      const modelo = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
       const parts = [];
       if (base64 && prefixo) parts.push({ inline_data: { mime_type: prefixo, data: base64 } });
       parts.push({ text: userText });
@@ -2491,7 +2491,7 @@ async function gerarCronogramaComIA(pergunta) {
 
   if (process.env.GEMINI_API_KEY) {
     try {
-      const modelo = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+      const modelo = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
       const resIA = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
         {

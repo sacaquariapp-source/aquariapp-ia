@@ -32,6 +32,7 @@ const whatsappApi = require('./whatsappApi');
 const concursosStore = require('./concursosStore');
 const telemetriaStore = require('./telemetriaStore');
 const testerStore = require('./testerStore');
+const cacheStore = require('./cacheStore');
 const pagamentosStore = require('./pagamentosStore');
 const contasStore = require('./contasStore');
 
@@ -336,28 +337,32 @@ const PROMPT_VALIDACAO_CONCURSO =
 
 const PROMPT_COMPATIBILIDADE =
   'Você é um especialista em aquarismo de água doce. Avalie se um NOVO peixe pode ser introduzido com segurança em um aquário JÁ habitado. ' +
-  'Analise RIGOROSAMENTE os seguintes critérios, nesta ordem de importância: ' +
-  '(1) PREDAÇÃO E COMPATIBILIDADE COM A FAUNA EXISTENTE: avalie o comportamento predatório e o TAMANHO ADULTO do novo peixe contra CADA ' +
-  'peixe já existente. Se o novo peixe é um predador (ex.: Oscar, ciclídeo grande) e a fauna existente é pequena (ex.: tetras, neons, ' +
-  'guppys, coridoras), é INCOMPATÍVEL — o novo peixe vai caçar/comer a fauna pequena. Também avalie agressividade, territorialidade, ' +
-  'diferença de tamanho e se nadam na mesma região. ' +
-  '(2) ESPAÇO / LOTAÇÃO: considere o VOLUME do aquário (litros). Um peixe grande (ex.: Oscar precisa de 400L+; um adulto grande não ' +
-  'cabe num tanque pequeno) NÃO pode ser colocado em um aquário pequeno. Avalie se o tamanho adulto do novo peixe é compatível com o ' +
-  'volume disponível e se a lotação não fica excessiva. ' +
-  '(3) AMBIENTE / TIPO DO AQUÁRIO: considere o tipo informado (comunitário, etc.) e se o novo peixe se adequa ao conjunto. ' +
-  '(4) PARÂMETROS DA ÁGUA: compare a faixa preferida do novo peixe (pH e temperatura) com a dos peixes existentes e com o pH/temperatura ' +
-  'do aquário. ' +
+  'Seja CRITERIOSO e CONSERVADOR: marque como incompatível APENAS nos casos listados abaixo. ' +
+  'Considere incompatível SOMENTE quando houver: ' +
+  '(1) RISCO DE MORTE POR PREDAÇÃO OU BRIGAS: o novo peixe é predador e vai comer a fauna existente (ex.: Oscar/ciclídeo grande com ' +
+  'tetras, neons, guppys, coridoras pequenas), OU há risco real de morte por agressão/territorialidade letal entre espécies. ' +
+  '(2) ESPAÇO INSUFICIENTE PARA SOBREVIVER: o volume do aquário é claramente pequeno demais para o tamanho adulto do novo peixe ' +
+  '(ex.: Oscar adulto de 40cm num aquário de 40L) — risco de morte por espaço. ' +
+  '(3) AMBIENTE TOTALMENTE DIFERENTE: os parâmetros de água são extremos e opostos entre as espécies, de forma que NENHUMA das duas ' +
+  'sobrevive na água da outra (ex.: ciclídeo africano de lago alcalino pH 8.5+ com barbo de água ácida pH 6.0, ou peixe de água doce ' +
+  'pura com peixe de água salobra). ' +
+  'NÃO considere incompatível por pequenas diferenças de pH, temperatura ou dureza (ex.: pH 7.0 vs 7.4, temperatura 24 vs 26°C), ' +
+  'nem por diferenças de comportamento que não impliquem risco de morte. Ajustes pequenos de água atendem ambas as espécies. ' +
   'Responda APENAS com JSON válido: {"compativel": true} se for seguro, ou ' +
-  '{"compativel": false, "motivo": "explicação breve em português com poucas palavras, citando o risco principal (ex.: predação, espaço insuficiente, pH/temperatura incompatíveis)"} se houver QUALQUER risco. ' +
-  'Se houver mais de um risco, mencione os principais no motivo. Se não tiver certeza, responda compativel false com o motivo da dúvida.';
+  '{"compativel": false, "motivo": "explicação breve em português com poucas palavras, citando o risco principal (ex.: predação, ' +
+  'espaço insuficiente, ambiente totalmente diferente)"} se houver risco de morte ou ambiente totalmente incompatível. ' +
+  'Se houver mais de um risco, mencione os principais no motivo. Se não tiver certeza sobre um risco real de morte, ' +
+  'responda compativel true (apenas se não houver risco claro de morte nem ambiente totalmente diferente).';
 
 const PROMPT_SUGESTOES =
   'Você é um especialista em aquarismo de água doce. O usuário quer sugestões de espécies de peixes (apenas fauna, nada de plantas) ' +
-  'que possam ser ADICIONADAS com segurança a um aquário já montado. Considere SEMPRE, nesta ordem de prioridade: ' +
-  '1º RISCO ENTRE ESPÉCIES: o novo peixe não pode ter risco de predação, agressão ou territorialidade com NENHUM peixe existente ' +
-  '(avaliar comportamento, dieta, diferença de tamanho adulto e hábitos). ' +
-  '2º AMBIENTE: o novo peixe deve ser compatível com o tipo do aquário, pH, temperatura e espaço (lotação) informados. ' +
-  '3º Espécies que já existem no aquário NÃO devem ser repetidas. ' +
+  'que possam ser ADICIONADAS com segurança a um aquário já montado. Seja CRITERIOSO: considere incompatível APENAS quando houver ' +
+  'risco real de morte (predação, brigas letais) ou espaço insuficiente para o tamanho adulto, ou ambiente totalmente diferente ' +
+  '(ex.: peixe de água alcalina extrema vs ácida extrema). Pequenas diferenças de pH/temperatura não tornam espécies incompatíveis. ' +
+  '1º RISCO ENTRE ESPÉCIES: o novo peixe não pode ter risco de morte (predação, agressão letal) com NENHUM peixe existente. ' +
+  '2º ESPAÇO: o tamanho adulto do novo peixe deve caber no volume do aquário. ' +
+  '3º AMBIENTE: o novo peixe deve tolerar o pH e a temperatura do aquário (pequenas diferenças são aceitáveis). ' +
+  '4º Espécies que já existem no aquário NÃO devem ser repetidas. ' +
   'Responda APENAS com JSON válido no formato: {"sugestoes":[{"nomeComum":"nome popular","nomeCientifico":"nome científico","motivo":"motivo curto e específico"}]}. ' +
   'Máximo de 5 sugestões. Se a lotação estiver no limite ou não houver boas opções, retorne menos sugestões (ou lista vazia). ' +
   'Não invente espécies inexistentes e use nomes científicos corretos.';
@@ -394,21 +399,26 @@ const PROMPT_SUGESTAO_AQUARIO =
   'Não invente espécies inexistentes. As quantidades devem ser realistas para o volume informado.';
 
 const PROMPT_AVALIACAO =
-  'Você é um consultor experiente de aquarismo de água doce. Analise TODAS as informações do aquário do usuário ' +
-  'fornecidas abaixo e responda APENAS com JSON válido no formato: ' +
-  '{"resumo":"resumo geral de 2 a 4 frases sobre o estado atual do aquário",' +
+  'Você é um aquarista experiente em qualidade da água para água doce. Analise TODAS as informações do aquário ' +
+  'do usuário fornecidas abaixo (parâmetros com seus SELOS, fauna, flora, equipamentos e histórico) e responda ' +
+  'APENAS com JSON válido no formato: ' +
+  '{"resumo":"avaliação curta e honesta do estado atual (2 a 4 frases)",' +
   '"pontosFortes":["o que está bem feito","..."],' +
   '"sugestoes":[{"titulo":"dica curta","detalhe":"explicação prática de como melhorar"}],' +
   '"urgencias":[{"titulo":"atenção","detalhe":"o que precisa de ação rápida"]}]}. ' +
   'Regras: ' +
-  '(1) resumo deve ser honesto e em português claro. ' +
-  '(2) pontosFortes: destaque o que está correto (fauna compatível, lotação adequada, plantado com CO2, etc.). ' +
-  '(3) sugestoes: até 6 dicas práticas de melhoria considerando fauna, flora, equipamentos, iluminação, ' +
-  'parâmetros, lotação e rotina de manutenção (TPA ~20% a cada 2 semanas). ' +
-  '(4) urgencias: liste riscos que exigem ação rápida — lotação acima do ideal (regra de 1 L por cm de peixe, considerando 50% do tamanho adulto), ' +
-  'amônia/nitrito altos, pH/temperatura fora da faixa das espécies, incompatibilidade entre espécies, ' +
-  'filtragem insuficiente, uso de produto tóxico para a fauna. Se não houver urgência, retorne lista vazia. ' +
-  '(5) Use regras de compatibilidade e os parâmetros ideais das espécies. Não invente problemas que os dados não suportam.';
+  '(1) Avalie CADA parâmetro preenchido pelo seu SELO (Seguro/Atenção/Perigo) e pelo valor medido; não invente ' +
+  'parâmetros que o usuário não mediu. ' +
+  '(2) Se houver HISTÓRICO com mais de uma medição, faça uma análise EVOLUTIVA: compare as últimas medições e ' +
+  'diga se cada parâmetro melhorou, piorou ou ficou estável, e o que isso indica. ' +
+  '(3) Considere a fauna e a flora cadastradas: aponte incompatibilidades entre os parâmetros ideais das espécies ' +
+  'e a água medida. ' +
+  '(4) pontosFortes: destaque o que está correto (parâmetros em selo Seguro, fauna compatível, lotação adequada, etc.). ' +
+  '(5) sugestoes: até 4 dicas práticas e específicas, com base no que está em Atenção ou que pode melhorar. ' +
+  '(6) urgencias: liste apenas riscos reais exigindo ação rápida (parâmetro em Perigo, incompatibilidade grave, ' +
+  'risco de morte). Se não houver, retorne lista vazia. ' +
+  '(7) Resposta CURTA: o resumo deve ter no máximo 3 frases e o total de tudo não deve passar de 15 linhas. ' +
+  'Seja objetivo e direto, sem encher linguiça.';
 
 const PROMPT_PERGUNTA =
   'Você é um consultor de aquarismo de água doce. O usuário fará uma pergunta curta e objetiva. ' +
@@ -530,6 +540,8 @@ function semChaves() {
   if (process.env.OPENAI_API_KEY) presentes.push('OpenAI');
   if (process.env.GEMINI_API_KEY) presentes.push('Gemini');
   if (process.env.PLANTNET_API_KEY) presentes.push('PlantNet');
+  if (process.env.FISHIAL_CLIENT_ID && process.env.FISHIAL_CLIENT_SECRET) presentes.push('Fishial');
+  if (process.env.ROBOFLOW_API_KEY) presentes.push('Roboflow');
   return presentes;
 }
 
@@ -815,6 +827,10 @@ app.get('/', (req, res) => {
         ChacaraTakeyoshi: true,
         Wikipedia: true,
         GuiaSeuNovoAquario: true,
+        Trefle: !!process.env.TREFLE_TOKEN,
+        INaturalist: true,
+        FishBase: true,
+        SpeciesLink: true,
       },
     });
 });
@@ -832,6 +848,15 @@ app.post('/identify', async (req, res) => {
   const errosValidacao = [];
 
   console.log(`[identify] mime=${prefixo} | base64 length=${base64 ? base64.length : 0}`);
+
+  // CACHE de identificações: mesma foto (hash da imagem) → mesmo resultado por
+  // até 30 dias. Evita gastar créditos de IA repetidamente e responde instantâneo.
+  const hashCache = cacheStore.gerarHash(base64);
+  const cacheHit = hashCache ? cacheStore.buscar(hashCache) : null;
+  if (cacheHit && cacheHit.nomeCientifico) {
+    console.log(`[identify] CACHE HIT (${hashCache.slice(0, 12)}…) → ${cacheHit.nomeCientifico}`);
+    return res.json({ ...cacheHit, cache: true });
+  }
 
   // Validação de conteúdo (mesma de /diagnostico): rejeita fotos que não sejam
   // de peixes/plantas aquáticas antes de gastar créditos de visão na identificação.
@@ -876,13 +901,17 @@ app.post('/identify', async (req, res) => {
   }
 
   const resultados = [];
+  // Ordem dos provedores: especialistas primeiro (peixes → Fishial, plantas →
+  // PlantNet/Trefle), genéricos como fallback. Fishial/PlantNet têm maior peso.
   const tentativas = [
-    ['Gemini', () => viaGemini(base64, prefixo)],
+    ['Fishial', () => viaFishial(base64, prefixo)],
     ['PlantNet', () => viaPlantNet(base64, prefixo)],
+    ['Gemini', () => viaGemini(base64, prefixo)],
     ['OpenAI', () => viaOpenAI(dataUrl)],
   ];
   for (const [nome, fn] of tentativas) {
     if (nome === 'Gemini' && !process.env.GEMINI_API_KEY) continue;
+    if (nome === 'Fishial' && (!process.env.FISHIAL_CLIENT_ID || !process.env.FISHIAL_CLIENT_SECRET)) continue;
     if (nome === 'PlantNet' && !process.env.PLANTNET_API_KEY) continue;
     if (nome === 'OpenAI' && !process.env.OPENAI_API_KEY) continue;
     try {
@@ -898,31 +927,114 @@ app.post('/identify', async (req, res) => {
     }
   }
 
+  // Enriquecimento complementar:
+  //  - Se identificou FLORA, consulta o Trefle (base botânica) para validar/refinar.
+  //  - Se identificou FAUNA, consulta o SpeciesLink (biodiversidade BR) e anota
+  //    se a espécie tem ocorrência no Brasil (enriquecimento, sem substituir).
+  const comTipo = (t) => resultados.filter((x) => x.r && x.r.tipo === t);
+  const melhorFlora = comTipo('flora').sort((a, b) => (Number(b.r.confianca) || 0) - (Number(a.r.confianca) || 0))[0];
+  if (melhorFlora && process.env.TREFLE_TOKEN) {
+    try {
+      const trefle = await viaTrefle(melhorFlora.r.nomeCientifico || melhorFlora.r.nomeComum);
+      if (trefle && trefle.nomeCientifico) {
+        resultados.push({ nome: 'Trefle', r: trefle });
+      }
+    } catch (e) {
+      console.error('Falha Trefle (enriquecimento):', e.message);
+      erros.push(`Trefle: ${e.message}`);
+    }
+  }
+  const melhorFauna = comTipo('fauna').sort((a, b) => (Number(b.r.confianca) || 0) - (Number(a.r.confianca) || 0))[0];
+  if (melhorFauna && process.env.SPECIESLINK_API_KEY) {
+    try {
+      const spl = await viaSpeciesLink(melhorFauna.r.nomeCientifico);
+      if (spl && spl.nomeCientifico) {
+        resultados.push({ nome: 'SpeciesLink', r: spl });
+      }
+    } catch (e) {
+      console.error('Falha SpeciesLink (enriquecimento):', e.message);
+      erros.push(`SpeciesLink: ${e.message}`);
+    }
+  }
+
   if (resultados.length > 0) {
-    // Escolhe o resultado de MAIOR confiança; em empate, o que veio primeiro.
+    // Confiança PONDERADA: especialistas valem mais que IAs genéricas.
+    // Fishial (peixes) e PlantNet (plantas) = 2.0; Trefle (plantas) = 1.5;
+    // SpeciesLink (validação BR) = 1.3; Gemini/OpenAI = 1.0.
+    const PESOS = {
+      Fishial: 2.0,
+      PlantNet: 2.0,
+      Trefle: 1.5,
+      SpeciesLink: 1.3,
+      Gemini: 1.0,
+      OpenAI: 1.0,
+    };
+    const pontuacao = (x) => {
+      const base = Number(x.r && x.r.confianca) || 0;
+      const peso = PESOS[x.nome] || 1.0;
+      // SpeciesLink só enriquece; não deve ganhar como identificador principal.
+      const penalidade = x.nome === 'SpeciesLink' ? 40 : 0;
+      return base * peso - penalidade;
+    };
     let melhor = resultados[0];
     for (const cand of resultados.slice(1)) {
-      const c = Number(cand.r.confianca) || 0;
-      const m = Number(melhor.r.confianca) || 0;
-      if (c > m) melhor = cand;
-      else if (c === m && cand.nome === 'Gemini') melhor = cand;
+      if (pontuacao(cand) > pontuacao(melhor)) melhor = cand;
     }
-    // PlantNet só identifica PLANTA. Se o melhor por confianca veio do PlantNet
-    // (tipo flora) mas um provedor de visão geral (Gemini/OpenAI) apontou FAUNA
-    // com confianca razoável, prioriza a fauna (evita "peixe → planta").
+    // Proteção fauna-vs-flora: se o melhor por pontuação é uma planta (PlantNet/
+    // Trefle) mas uma IA de visão (Gemini/OpenAI) apontou FAUNA com confiança
+    // razoável, prioriza a fauna (evita "peixe → planta").
     const vision = resultados.filter((x) => (x.nome === 'Gemini' || x.nome === 'OpenAI') && x.r && x.r.tipo === 'fauna');
-    if (melhor.nome === 'PlantNet' && melhor.r && melhor.r.tipo === 'flora' && vision.length > 0) {
+    if (
+      (melhor.nome === 'PlantNet' || melhor.nome === 'Trefle') &&
+      melhor.r && melhor.r.tipo === 'flora' && vision.length > 0
+    ) {
       const visaoTop = vision.sort((a, b) => (Number(b.r.confianca) || 0) - (Number(a.r.confianca) || 0))[0];
       if ((Number(visaoTop.r.confianca) || 0) >= 60) melhor = visaoTop;
+    }
+    // Enriquecimento SpeciesLink: se não é o principal, funde a origem no principal.
+    const splEnriq = resultados.find((x) => x.nome === 'SpeciesLink' && x.r);
+    if (splEnriq && melhor.nome !== 'SpeciesLink') {
+      const origemSpl = splEnriq.r.origem;
+      if (origemSpl && origemSpl !== '—') {
+        melhor.r.origem = melhor.r.origem && melhor.r.origem !== '—' ? melhor.r.origem : origemSpl;
+        melhor.r.observacoes = [melhor.r.observacoes, splEnriq.r.observacoes].filter(Boolean).join(' ');
+      }
     }
     const enr = await comFoto(melhor.r);
     // Une as opções dos demais provedores quando houver divergência.
     const opcoesExtras = resultados
-      .filter((x) => x !== melhor && x.r && x.r.nomeComum)
+      .filter((x) => x !== melhor && x.r && x.r.nomeComum && x.nome !== 'SpeciesLink')
       .map((x) => ({ provedor: x.nome, ...x.r }))
       .filter((o) => o.nomeComum && o.nomeComum !== enr.nomeComum);
     if (opcoesExtras.length > 0) {
       enr.opcoes = [...(enr.opcoes || []), ...opcoesExtras];
+    }
+    enr.provedor = melhor.nome;
+    if (hashCache) {
+      cacheStore.salvarResultado(hashCache, {
+        provedor: enr.provedor,
+        confianca: enr.confianca,
+        tipo: enr.tipo,
+        nomeComum: enr.nomeComum,
+        nomeCientifico: enr.nomeCientifico,
+        familia: enr.familia,
+        origem: enr.origem,
+        tamanho: enr.tamanho,
+        temperatura: enr.temperatura,
+        ph: enr.ph,
+        dureza: enr.dureza,
+        dieta: enr.dieta,
+        comportamento: enr.comportamento,
+        aquarioMinimo: enr.aquarioMinimo,
+        dificuldade: enr.dificuldade,
+        iluminacao: enr.iluminacao,
+        co2: enr.co2,
+        crescimento: enr.crescimento,
+        tipoPlanta: enr.tipoPlanta,
+        observacoes: enr.observacoes,
+        foto: enr.foto,
+        opcoes: enr.opcoes || [],
+      });
     }
     return res.json(enr);
   }
@@ -1797,7 +1909,23 @@ app.post('/avaliacao-aquario', async (req, res) => {
     ? `Exigência das plantas (tech): ${tech.rotulo || tech.nivel || '?'}.`
     : '';
   const textoQualidade = qualidade
-    ? `Qualidade da água: ${qualidade.descricao || qualidade.nivel || 'sem dados'}.${qualidade.alertas && qualidade.alertas.length ? ` Alertas: ${qualidade.alertas.join('; ')}.` : ''}`
+    ? `Qualidade da água: ${qualidade.descricao || qualidade.nivel || 'sem dados'}.${qualidade.alertas && qualidade.alertas.length ? ` Alertas: ${qualidade.alertas.join('; ')}.` : ''}` +
+      (Array.isArray(qualidade.detalhes) && qualidade.detalhes.length
+        ? ` Parâmetros medidos (valor [selo]): ${qualidade.detalhes
+            .map((d) => `${d.titulo || d.campo}: ${d.valor}${d.unidade ? ` ${d.unidade}` : ''} [${d.selo || 'sem selo'}]`)
+            .join('; ')}.`
+        : '') +
+      (Array.isArray(qualidade.historico) && qualidade.historico.length > 1
+        ? ` Histórico evolutivo (da mais recente para a mais antiga): ${qualidade.historico
+            .map(
+              (h, i) =>
+                `#${i + 1} (${h.criadoEm ? new Date(h.criadoEm).toLocaleDateString('pt-BR') : '?'}): ` +
+                (Array.isArray(h.detalhes) && h.detalhes.length
+                  ? h.detalhes.map((d) => `${d.titulo || d.campo}=${d.valor}${d.unidade ? d.unidade : ''}[${d.selo || ''}]`).join(', ')
+                  : 'sem medições')
+            )
+            .join(' | ')}.`
+        : '')
     : '';
   const textoEstoque = (estoque || [])
     .slice(0, 25)
@@ -1931,6 +2059,9 @@ const CATALOGO_DOENCAS = [
   { nome: 'Problema de Bexiga Natatória', sinonimos: 'cabeça para baixo, afundando', sintomas: 'peixe sem equilíbrio na natação', causa: 'superalimentação/constipação', tratamento: 'jejum 2-3 dias, ervilha e banho de sal amargo', medicamentos: ['sal amargo', 'ervilha'] },
   { nome: 'Constipação (Prisão de Ventre)', sinonimos: 'prisao de ventre, constipado, sem fezes', sintomas: 'ventre inchado e fezes não eliminadas', causa: 'superalimentação e dieta seca', tratamento: 'jejum 2-3 dias, ervilha e banho de sal amargo (sulfato de magnésio) para estimular a evacuação', medicamentos: ['sal amargo', 'ervilha'] },
   { nome: 'Estresse/Letargia/Perda de Cor', sinonimos: 'apatia, desbotado, natas', sintomas: 'peixe parado e sem cor', causa: 'má qualidade da água', tratamento: 'água limpa, TPA, estabilidade', medicamentos: [] },
+  { nome: 'Doença da Bolha de Gás (Gas Bubble Disease)', sinonimos: 'bolhas de gás, embolia gasosa, gas bubble disease', sintomas: 'bolhas de gás sob a pele, guelras e olhos; peixe boiando ou letárgico', causa: 'supersaturação de gases na água (oxigênio/nitrogênio) por vazamento de ar, bomba com entrada de ar, aquário superaerado ou água de torneira supersaturada', tratamento: 'desligar/ajustar aeração excessiva, eliminar vazamentos de ar, TPA com água sem bolhas e aguardar a água degasear antes de adicionar', medicamentos: [] },
+  { nome: 'Vermes de Pele e Guelras (Gyrodactylus/Dactylogyrus)', sinonimos: 'monogenea, skin flukes, gill flukes, vermes nas guelras', sintomas: 'peixe esfregando-se (flashing), guelras abertas e vermelhas, respiração rápida, muco excessivo, opérculo levantado', causa: 'parasitas monogenéticos (Gyrodactylus na pele, Dactylogyrus nas guelras)', tratamento: 'banho antiparasitário com praziquantel ou formalina diluída, seguir dose conforme litragem, repetir em 4-7 dias para quebrar o ciclo', medicamentos: ['praziquantel'] },
+  { nome: 'Furunculose (Aeromonas)', sinonimos: 'furunculosis, aeromonas, feridas profundas', sintomas: 'feridas/abscessos profundos na musculatura, hemorragias na base das nadadeiras, apatia', causa: 'bactéria Aeromonas salmonicida, favorecida por estresse e água ruim', tratamento: 'TPA rigorosa, antibacteriano (oxitetraciclina/amoxicilina), isolar o peixe e melhorar filtragem e oxigenação', medicamentos: ['oxitetraciclina', 'amoxicilina'] },
 ];
 
 const CATALOGO_ALGAS = [
@@ -2122,6 +2253,23 @@ async function diagnosticarComIA(imagem, estoqueMedicamentos, descricao, faunaSe
       ? `\nFauna sensível presente nos aquários do usuário: ${faunaSensivel.temInvertebradoFauna ? 'invertebrados (caramujos, camarões, lagostas, siris)' : ''}${faunaSensivel.temInvertebradoFauna && faunaSensivel.temAxoloteFauna ? ' e ' : ''}${faunaSensivel.temAxoloteFauna ? 'axolote(s)' : ''}. Se o tratamento indicado usar verde de malaquita ou cobre, oriente SEMPRE a retirada dos invertebrados/axolote do aquário antes de tratar.`
       : '';
   const userText = `Medicamentos disponíveis no estoque do usuário: ${textoMedicamentos}.${textoDescricao}${textoFaunaSensivel} Analise a foto (se houver) e diagnostique, comparando os sinais com o catálogo.`;
+
+  // Roboflow Fish Disease: visão especializada que detecta doença/peixe saudável.
+  // Se encontrar indício de doença com confiança razoável, inclui no contexto
+  // para o Gemini/OpenAI confirmarem com o catálogo local.
+  if (process.env.ROBOFLOW_API_KEY && imagem) {
+    try {
+      const roboflow = await viaRoboflowDoenca(
+        imagem.includes('base64,') ? imagem.split('base64,')[1] : imagem,
+        imagem.match(/^data:([^;]+);base64,/) ? imagem.match(/^data:([^;]+);base64,/)[1] : 'image/jpeg'
+      );
+      if (roboflow && roboflow.comDoenca && roboflow.confianca >= 50) {
+        userText += `\n\n[Pré-análise por visão especializada (Roboflow): possível sinal de doença detectado — classe "${roboflow.classe}" com ${roboflow.confianca}% de confiança. Use isso como pista adicional, mas confirme com o catálogo e a foto.]`;
+      }
+    } catch (e) {
+      console.error('Falha Roboflow (pré-diagnóstico):', e.message);
+    }
+  }
 
   if (process.env.GEMINI_API_KEY) {
     try {
@@ -2591,6 +2739,171 @@ async function viaPlantNet(base64, mime) {
   return { ...principal, opcoes };
 }
 
+// Fishial.AI — reconhecimento de PEIXES por imagem (API V2).
+// Requer FISHIAL_CLIENT_ID e FISHIAL_CLIENT_SECRET (gratuitos em fishial.ai).
+// Fluxo: obtém um token curto (~10 min) em /v2/auth e envia a imagem crua em
+// /v2/recognize. Resposta: objects[].species[] com certainty (0-1) + definitions.
+async function viaFishial(base64, mime) {
+  if (!process.env.FISHIAL_CLIENT_ID || !process.env.FISHIAL_CLIENT_SECRET) {
+    throw new Error('Fishial: credenciais não configuradas');
+  }
+  const authRes = await fetch('https://api-recognition.fishial.ai/v2/auth', {
+    method: 'POST',
+    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client_id: process.env.FISHIAL_CLIENT_ID,
+      client_secret: process.env.FISHIAL_CLIENT_SECRET,
+    }),
+  });
+  if (!authRes.ok) {
+    const corpo = await authRes.text().catch(() => '');
+    throw new Error(`Fishial auth (HTTP ${authRes.status}): ${corpo.slice(0, 300)}`);
+  }
+  const auth = await authRes.json();
+  const token = auth.access_token || auth.token || auth.accessToken || '';
+  if (!token) throw new Error('Fishial: token não retornado');
+
+  const contentType = mime && mime.startsWith('image/') ? mime : 'image/jpeg';
+  const recRes = await fetch('https://api-recognition.fishial.ai/v2/recognize', {
+    method: 'POST',
+    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': contentType,
+    },
+    body: Buffer.from(base64, 'base64'),
+  });
+  if (!recRes.ok) {
+    const corpo = await recRes.text().catch(() => '');
+    throw new Error(`Fishial recognize (HTTP ${recRes.status}): ${corpo.slice(0, 300)}`);
+  }
+  const rec = await recRes.json();
+  const objetos = rec.objects || [];
+  if (objetos.length === 0) throw new Error('Fishial: nenhum peixe detectado');
+  const especies = (objetos[0].species || []).filter((s) => s && s.certainty != null);
+  if (especies.length === 0) throw new Error('Fishial: nenhuma espécie');
+  const melhorEspecie = especies[0];
+  const defs = rec.definitions || {};
+  const def = defs[melhorEspecie.id] || {};
+  const confianca = Math.round(melhorEspecie.certainty * 100);
+  return normalizarResultado({
+    provedor: 'Fishial',
+    confianca,
+    tipo: 'fauna',
+    nomeComum: def.commonName || 'Peixe identificado',
+    nomeCientifico: def.scientificName || 'Não identificado',
+    familia: '—',
+    foto: def.imageUrl || '',
+    observacoes: `Confiança de ${confianca}% segundo o modelo Fishial.`,
+  });
+}
+
+// Trefle.io — busca de PLANTAS por nome (base botânica com 400k+ espécies).
+// Requer TREFLE_TOKEN (trefle.io). Recebe o nome identificado (popular ou
+// científico) e retorna dados de flora enriquecidos. Não identifica por foto.
+async function viaTrefle(nome) {
+  const termo = String(nome || '').trim();
+  if (!termo || !process.env.TREFLE_TOKEN) {
+    throw new Error('Trefle: termo vazio ou chave não configurada');
+  }
+  const res = await fetch(
+    `https://trefle.io/api/v1/plants/search?token=${encodeURIComponent(process.env.TREFLE_TOKEN)}&q=${encodeURIComponent(termo)}&limit=5`,
+    { signal: AbortSignal.timeout(AI_TIMEOUT_MS) }
+  );
+  if (!res.ok) {
+    const corpo = await res.text().catch(() => '');
+    throw new Error(`Trefle (HTTP ${res.status}): ${corpo.slice(0, 300)}`);
+  }
+  const json = await res.json();
+  const itens = json.data || [];
+  if (itens.length === 0) throw new Error('Trefle: nenhuma planta encontrada');
+  const melhor = itens[0];
+  const nomeCientifico = melhor.scientific_name || '';
+  const nomesComuns = (melhor.common_name || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const familia = (melhor.family || '—').trim();
+  const imagem = melhor.image_url || '';
+  return normalizarResultado({
+    provedor: 'Trefle',
+    confianca: 80,
+    tipo: 'flora',
+    nomeComum: nomesComuns[0] || 'Planta identificada',
+    nomeCientifico,
+    familia,
+    origem: (melhor.origin || '—'),
+    tamanho: melhor.vegetable ? '—' : '—',
+    foto: imagem,
+    observacoes: `Base botânica Trefle: ${nomeCientifico} (família ${familia}).`,
+  });
+}
+
+// SpeciesLink (splink.cria.org.br) — biodiversidade brasileira. Valida se a
+// espécie identificada é registrada no Brasil (ocorrências de fauna/flora).
+// Recebe o nome científico após a identificação e enriquece com distribuição.
+async function viaSpeciesLink(nomeCientifico) {
+  const termo = String(nomeCientifico || '').trim();
+  if (!termo || termo === 'Não identificado') {
+    throw new Error('SpeciesLink: sem nome científico');
+  }
+  const chave = process.env.SPECIESLINK_API_KEY || '';
+  const url = `https://api.splink.org.br/records/${encodeURIComponent(termo)}/count`;
+  const headers = { Accept: 'application/json' };
+  if (chave) headers['X-Api-Key'] = chave;
+  const res = await fetch(url, { headers, signal: AbortSignal.timeout(AI_TIMEOUT_MS) });
+  if (!res.ok) {
+    const corpo = await res.text().catch(() => '');
+    throw new Error(`SpeciesLink (HTTP ${res.status}): ${corpo.slice(0, 300)}`);
+  }
+  const json = await res.json();
+  const total = Number(json.total) || Number(json.count) || 0;
+  const temOcorrencia = total > 0;
+  return {
+    provedor: 'SpeciesLink',
+    confianca: temOcorrencia ? 85 : 30,
+    tipo: null,
+    nomeComum: '',
+    nomeCientifico: termo,
+    familia: '—',
+    origem: temOcorrencia ? 'Brasil (registro SpeciesLink)' : 'Sem registro no Brasil',
+    tamanho: '—',
+    observacoes: temOcorrencia
+      ? `Espécie com ${total} ocorrência(s) registrada(s) no Brasil (SpeciesLink).`
+      : 'Espécie sem ocorrência registrada no Brasil (SpeciesLink).',
+    foto: '',
+  };
+}
+
+// Roboflow Fish Disease — visão especializada em doenças de peixes.
+// Requer ROBOFLOW_API_KEY (app.roboflow.com/settings/api) e opcionalmente
+// ROBOFLOW_MODEL (model_id no formato "projeto/versao"; padrão: modelo público
+// de detecção fish_diseases-cog3w/5 — classes: cotton mouth, BGD, etc.).
+// A API aceita a imagem como base64 no corpo (Content-Type form-urlencoded).
+// Retorna { classe, confianca, comDoenca } ou null quando não configurado.
+async function viaRoboflowDoenca(base64, mime) {
+  if (!process.env.ROBOFLOW_API_KEY || !base64) return null;
+  const modelo = process.env.ROBOFLOW_MODEL || 'fish_diseases-cog3w/5';
+  const res = await fetch(`https://serverless.roboflow.com/${modelo}?api_key=${encodeURIComponent(process.env.ROBOFLOW_API_KEY)}`, {
+    method: 'POST',
+    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: base64,
+  });
+  if (!res.ok) {
+    const corpo = await res.text().catch(() => '');
+    throw new Error(`Roboflow (HTTP ${res.status}): ${corpo.slice(0, 300)}`);
+  }
+  const json = await res.json();
+  const predicoes = json.predictions || [];
+  if (predicoes.length === 0) return null;
+  const melhor = predicoes.sort((a, b) => (Number(b.confidence) || 0) - (Number(a.confidence) || 0))[0];
+  const classe = String(melhor.class || melhor.predicted_class || json.top || '');
+  if (!classe) return null;
+  const confianca = Math.round((Number(melhor.confidence) || json.confidence || 0) * 100);
+  const classeNorm = classe.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const comDoenca = !/healthy|sadio|sana/.test(classeNorm);
+  return { classe, confianca, comDoenca };
+}
+
 function exigirAdmin(req, res) {
   if (autenticado(req)) return true;
   res.status(401).json({ erro: 'Chave de administração inválida.' });
@@ -2929,20 +3242,20 @@ app.delete('/concursos/inscricao/:id', (req, res) => {
 
 // Recebe um evento de uso de seção (ex.: usuário abriu o Identificador).
 app.post('/telemetria/secao', (req, res) => {
-  const { secao } = req.body || {};
+  const { secao, dispositivoId, plano } = req.body || {};
   const nome = String(secao || '').trim();
   if (!nome) return res.status(400).json({ erro: 'Envie o campo "secao".' });
-  telemetriaStore.registrarSecao(nome.slice(0, 60));
+  telemetriaStore.registrarSecao(nome.slice(0, 60), plano, dispositivoId);
   res.json({ ok: true });
 });
 
 // Recebe o perfil de um aquário cadastrado/atualizado (para estatísticas).
 app.post('/telemetria/aquario', (req, res) => {
-  const { aquario } = req.body || {};
+  const { aquario, dispositivoId, plano } = req.body || {};
   if (!aquario || typeof aquario !== 'object') {
     return res.status(400).json({ erro: 'Envie o campo "aquario".' });
   }
-  telemetriaStore.registrarPerfilAquario(aquario);
+  telemetriaStore.registrarPerfilAquario(aquario, plano, dispositivoId);
   res.json({ ok: true });
 });
 

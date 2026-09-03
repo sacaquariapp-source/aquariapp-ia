@@ -245,6 +245,63 @@ app.post('/upload-imagem', (req, res) => {
   return res.json({ url });
 });
 
+// Transcrição de voz (OpenAI Whisper) — usada pelo botão "Falar" do app
+// (Perguntas e Pronto-Socorro) quando a Web Speech API não existe (celular).
+// Recebe o áudio em base64 e devolve o texto transcrito.
+app.post('/transcrever', (req, res) => {
+  const { audio, tipo, idioma } = req.body || {};
+  if (!audio || typeof audio !== 'string') {
+    return res.status(400).json({ erro: 'Envie o campo "audio" (base64).' });
+  }
+  if (!process.env.OPENAI_API_KEY) {
+    return res.status(503).json({ erro: 'Transcrição indisponível (chave OpenAI não configurada).' });
+  }
+  const base64 = audio.includes('base64,') ? audio.split('base64,')[1] : audio;
+  let buf;
+  try {
+    buf = Buffer.from(base64, 'base64');
+  } catch (e) {
+    return res.status(400).json({ erro: 'Áudio inválido.' });
+  }
+  if (!buf || buf.length === 0) {
+    return res.status(400).json({ erro: 'Áudio vazio.' });
+  }
+  if (buf.length > 12 * 1024 * 1024) {
+    return res.status(400).json({ erro: 'Áudio muito grande (máx. 12 MB).' });
+  }
+  const mime = String(tipo || 'audio/webm').toLowerCase();
+  const extensao = /mp4|aac/.test(mime) ? 'm4a' : /ogg/.test(mime) ? 'ogg' : /wav/.test(mime) ? 'wav' : 'webm';
+  const lang = idioma === 'en' ? 'en' : 'pt';
+
+  const form = new FormData();
+  form.append('file', new Blob([buf], { type: mime }), `voz.${extensao}`);
+  form.append('model', 'whisper-1');
+  form.append('language', lang);
+  form.append('response_format', 'json');
+
+  return fetch('https://api.openai.com/v1/audio/transcriptions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
+    body: form,
+  })
+    .then(async (resp) => {
+      const dados = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        console.error('Falha Whisper:', resp.status, JSON.stringify(dados).slice(0, 300));
+        return res.status(502).json({ erro: `Falha na transcrição (${resp.status}).` });
+      }
+      const texto = String((dados && dados.text) || '').trim();
+      if (!texto) {
+        return res.status(422).json({ codigo: 'sem_fala', erro: 'Nenhum texto reconhecido no áudio.' });
+      }
+      return res.json({ texto });
+    })
+    .catch((e) => {
+      console.error('Falha ao transcrever:', e.message);
+      return res.status(502).json({ erro: 'Não foi possível transcrever o áudio.' });
+    });
+});
+
 const rotasIA = [
   '/identify',
   '/buscar-nome',
@@ -262,6 +319,7 @@ const rotasIA = [
   '/avaliacao-graficos',
   '/cronograma-alimentar',
   '/pergunta',
+  '/transcrever',
 ];
 rotasIA.forEach((rota) => app.use(rota, limiterIA));
 
@@ -541,6 +599,7 @@ function semChaves() {
   if (process.env.GEMINI_API_KEY) presentes.push('Gemini');
   if (process.env.PLANTNET_API_KEY) presentes.push('PlantNet');
   if (process.env.FISHIAL_CLIENT_ID && process.env.FISHIAL_CLIENT_SECRET) presentes.push('Fishial');
+  if (process.env.GOOGLE_VISION_API_KEY) presentes.push('Google Vision');
   if (process.env.ROBOFLOW_API_KEY) presentes.push('Roboflow');
   return presentes;
 }
@@ -810,6 +869,54 @@ async function validarFotoOpenAI(dataUrl, prompt) {
   return { valida: !!dados.valida, motivo: dados.motivo || '' };
 }
 
+// Pré-classificação barata com Gemini: a foto é FAUNA ou FLORA? Usada para
+// escolher a ordem dos provedores especialistas (planta → PlantNet/Google;
+// peixe → Google/Fishial) antes de gastar os créditos de identificação.
+async function classificarTipoGemini(base64, mime) {
+  const modelo = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+  const PROMPT_TIPO =
+    'Analise a imagem e responda APENAS com um JSON válido: {"tipo":"fauna"|"flora"|"outro"}. ' +
+    '"fauna" = peixe, camarão, caramujo, caranguejo, lagosta, tartaruga ou outro animal aquático de água doce; ' +
+    '"flora" = planta aquática, alga, musgo, samambaia ou outra vegetação; ' +
+    '"outro" = qualquer outra coisa (pessoa, pet terrestre, objeto, paisagem, comida etc.).';
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
+    {
+      method: 'POST',
+      signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': process.env.GEMINI_API_KEY,
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { inline_data: { mime_type: mime, data: base64 } },
+              { text: 'Classifique o tipo do ser vivo na imagem.' },
+            ],
+          },
+        ],
+        generationConfig: {
+          responseMimeType: 'application/json',
+          maxOutputTokens: 40,
+        },
+      }),
+    }
+  );
+  if (!res.ok) {
+    const texto = await res.text().catch(() => '');
+    throw new Error(`Gemini classificação (HTTP ${res.status}): ${texto.slice(0, 200)}`);
+  }
+  const json = await res.json();
+  const conteudo = json.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('') || '';
+  if (!conteudo) return 'outro';
+  const dados = JSON.parse(conteudo.replace(/```json|```/g, '').trim());
+  const tipo = String((dados && dados.tipo) || 'outro').toLowerCase();
+  return tipo === 'fauna' || tipo === 'flora' ? tipo : 'outro';
+}
+
 app.get('/', (req, res) => {
   // Navegadores recebem o app dos testadores (mesma origem da IA: sem CORS).
   // Clientes de API/monitoramento continuam recebendo o JSON de status.
@@ -901,16 +1008,44 @@ app.post('/identify', async (req, res) => {
   }
 
   const resultados = [];
-  // Ordem dos provedores: especialistas primeiro (peixes → Fishial, plantas →
-  // PlantNet/Trefle), genéricos como fallback. Fishial/PlantNet têm maior peso.
-  const tentativas = [
-    ['Fishial', () => viaFishial(base64, prefixo)],
-    ['PlantNet', () => viaPlantNet(base64, prefixo)],
-    ['Gemini', () => viaGemini(base64, prefixo)],
-    ['OpenAI', () => viaOpenAI(dataUrl)],
-  ];
+  // Priorização INTELIGENTE: uma pré-classificação barata com Gemini decide a
+  // ordem dos especialistas antes de gastar créditos de identificação.
+  //  - FLORA  → PlantNet, Google Vision, Gemini
+  //  - FAUNA  → Google Vision, Fishial, Gemini
+  //  - indefinido → Google Vision, Fishial, PlantNet, Gemini
+  let tipoPrevisto = '';
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      tipoPrevisto = await classificarTipoGemini(base64, prefixo);
+    } catch (e) {
+      console.error('Falha na pré-classificação (Gemini):', e.message);
+    }
+  }
+  const ORDENS = {
+    flora: [
+      ['PlantNet', () => viaPlantNet(base64, prefixo)],
+      ['GoogleVision', () => viaGoogleVision(base64, prefixo)],
+      ['Gemini', () => viaGemini(base64, prefixo)],
+      ['OpenAI', () => viaOpenAI(dataUrl)],
+    ],
+    fauna: [
+      ['GoogleVision', () => viaGoogleVision(base64, prefixo)],
+      ['Fishial', () => viaFishial(base64, prefixo)],
+      ['Gemini', () => viaGemini(base64, prefixo)],
+      ['OpenAI', () => viaOpenAI(dataUrl)],
+    ],
+    padrao: [
+      ['GoogleVision', () => viaGoogleVision(base64, prefixo)],
+      ['Fishial', () => viaFishial(base64, prefixo)],
+      ['PlantNet', () => viaPlantNet(base64, prefixo)],
+      ['Gemini', () => viaGemini(base64, prefixo)],
+      ['OpenAI', () => viaOpenAI(dataUrl)],
+    ],
+  };
+  const tentativas = ORDENS[tipoPrevisto] || ORDENS.padrao;
   for (const [nome, fn] of tentativas) {
     if (nome === 'Gemini' && !process.env.GEMINI_API_KEY) continue;
+    if (nome === 'GoogleVision' && !process.env.GOOGLE_VISION_API_KEY) continue;
     if (nome === 'Fishial' && (!process.env.FISHIAL_CLIENT_ID || !process.env.FISHIAL_CLIENT_SECRET)) continue;
     if (nome === 'PlantNet' && !process.env.PLANTNET_API_KEY) continue;
     if (nome === 'OpenAI' && !process.env.OPENAI_API_KEY) continue;
@@ -959,11 +1094,13 @@ app.post('/identify', async (req, res) => {
 
   if (resultados.length > 0) {
     // Confiança PONDERADA: especialistas valem mais que IAs genéricas.
-    // Fishial (peixes) e PlantNet (plantas) = 2.0; Trefle (plantas) = 1.5;
-    // SpeciesLink (validação BR) = 1.3; Gemini/OpenAI = 1.0.
+    // Google Vision (fauna) = 2.5; PlantNet (plantas) = 2.5; Google Vision
+    // (flora) = 2.0; Fishial (peixes) = 2.0; Trefle = 1.5; SpeciesLink = 1.3;
+    // Gemini/OpenAI = 1.0.
     const PESOS = {
+      GoogleVision: 2.5,
       Fishial: 2.0,
-      PlantNet: 2.0,
+      PlantNet: 2.5,
       Trefle: 1.5,
       SpeciesLink: 1.3,
       Gemini: 1.0,
@@ -971,7 +1108,12 @@ app.post('/identify', async (req, res) => {
     };
     const pontuacao = (x) => {
       const base = Number(x.r && x.r.confianca) || 0;
-      const peso = PESOS[x.nome] || 1.0;
+      // Google Vision é o especialista de FAUNA (2.5); em FLORA vale 2.0 porque
+      // o PlantNet é o especialista de plantas (2.5).
+      const peso =
+        x.nome === 'GoogleVision' && x.r && x.r.tipo === 'flora'
+          ? 2.0
+          : PESOS[x.nome] || 1.0;
       // SpeciesLink só enriquece; não deve ganhar como identificador principal.
       const penalidade = x.nome === 'SpeciesLink' ? 40 : 0;
       return base * peso - penalidade;
@@ -981,9 +1123,11 @@ app.post('/identify', async (req, res) => {
       if (pontuacao(cand) > pontuacao(melhor)) melhor = cand;
     }
     // Proteção fauna-vs-flora: se o melhor por pontuação é uma planta (PlantNet/
-    // Trefle) mas uma IA de visão (Gemini/OpenAI) apontou FAUNA com confiança
-    // razoável, prioriza a fauna (evita "peixe → planta").
-    const vision = resultados.filter((x) => (x.nome === 'Gemini' || x.nome === 'OpenAI') && x.r && x.r.tipo === 'fauna');
+    // Trefle) mas uma IA de visão (Google Vision/Gemini/OpenAI) apontou FAUNA com
+    // confiança razoável, prioriza a fauna (evita "peixe → planta").
+    const vision = resultados.filter(
+      (x) => (x.nome === 'GoogleVision' || x.nome === 'Gemini' || x.nome === 'OpenAI') && x.r && x.r.tipo === 'fauna'
+    );
     if (
       (melhor.nome === 'PlantNet' || melhor.nome === 'Trefle') &&
       melhor.r && melhor.r.tipo === 'flora' && vision.length > 0
@@ -2799,6 +2943,161 @@ async function viaFishial(base64, mime) {
   });
 }
 
+// Google Cloud Vision — identificação geral por LABEL + WEB detection.
+// Requer GOOGLE_VISION_API_KEY (Cloud Vision API). Melhor acurácia geral;
+// usado como 1ª opção para FAUNA (peso 2.5) e 2ª para FLORA (peso 2.0).
+// Extrai o tipo (fauna/flora), o nome popular e o nome científico (binomial)
+// das entidades da web.
+const VISION_STOPWORDS = new Set([
+  'aquarium', 'aquário', 'aquario', 'fish', 'peixe', 'peixes', 'pet', 'animal', 'animals',
+  'plant', 'plants', 'planta', 'plantas', 'water', 'água', 'agua', 'biology', 'biologia',
+  'underwater', 'submerso', 'submerged', 'aquatic', 'aquática', 'aquatico', 'fauna',
+  'flora', 'nature', 'natureza', 'organism', 'organismo', 'vertebrate', 'invertebrate',
+  'aquatic animal', 'animal aquático', 'pescado', 'life', 'vida', 'wildlife', 'marine',
+  'freshwater', 'agua doce', 'água doce', 'ornamental fish', 'tropical fish',
+  'peixe ornamental', 'image', 'photo', 'foto', 'photography', 'fotografia', 'wallpaper',
+  'background', 'fundo', 'fish tank', 'aquario', 'tank', 'tanque', 'ornament', 'decor',
+  'aquascaping', 'aquaponia', 'icthyology', 'piscicultura', 'aquaculture', 'zoo',
+  'biotope', 'biotopo', 'home', 'casa', 'man', 'mulher', 'woman', 'homem', 'person',
+  'people', 'pessoas', 'group', 'grupo', 'hand', 'mão', 'mao', 'finger', 'dedo', 'kid',
+  'criança', 'crianca', 'child', 'menino', 'menina', 'boy', 'girl', 'table', 'mesa',
+  'room', 'sala', 'salao', 'couch', 'sofa', 'sofa', 'toy', 'brinquedo', 'statue',
+  'estatua', 'sculpture', 'escultura', 'paint', 'tinta', 'drawing', 'desenho',
+]);
+
+const VISION_GENERICO = /(fish|peixe|plant|planta|aquarium|aquário|aquario|pet|animal|biology|biologia|underwater|submerso|aquatic|aquático|aquatico|água|agua|water|natureza|nature|imagem|image|photo|foto|life|vida|vertebrate|invertebrate|organism|organismo|fauna|flora)$/i;
+
+function visaoNomeEhEspecie(texto) {
+  const x = String(texto || '').trim();
+  if (!x) return false;
+  const chave = x.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (VISION_STOPWORDS.has(chave)) return false;
+  if (VISION_GENERICO.test(x)) return false;
+  const palavras = x.split(/\s+/).length;
+  return palavras >= 1 && palavras <= 5;
+}
+
+async function viaGoogleVision(base64, mime) {
+  if (!process.env.GOOGLE_VISION_API_KEY) {
+    throw new Error('Google Vision: chave não configurada');
+  }
+  const res = await fetch(
+    `https://vision.googleapis.com/v1/images:annotate?key=${encodeURIComponent(process.env.GOOGLE_VISION_API_KEY)}`,
+    {
+      method: 'POST',
+      signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requests: [
+          {
+            image: { content: base64 },
+            features: [
+              { type: 'LABEL_DETECTION', maxResults: 12 },
+              { type: 'WEB_DETECTION', maxResults: 12 },
+            ],
+          },
+        ],
+      }),
+    }
+  );
+  if (!res.ok) {
+    const corpo = await res.text().catch(() => '');
+    console.error('Google Vision HTTP', res.status, '| corpo:', corpo.slice(0, 300));
+    throw new Error(`Google Vision (HTTP ${res.status}): ${corpo.slice(0, 200)}`);
+  }
+  const json = await res.json();
+  const resp = json.responses && json.responses[0];
+  if (!resp) throw new Error('Google Vision: resposta vazia');
+  if (resp.error) throw new Error(`Google Vision: ${resp.error.message || 'erro da API'}`);
+
+  const labels = (resp.labelAnnotations || []).map((l) => ({
+    texto: String(l.description || ''),
+    score: Math.round((l.score || 0) * 100),
+  }));
+  const web = resp.webDetection || {};
+  const entidades = (web.webEntities || []).map((e) => ({
+    texto: String(e.description || ''),
+    score: Math.round((e.score || 0) * 100),
+  }));
+  const bestGuess = web.bestGuessLabels && web.bestGuessLabels[0] ? web.bestGuessLabels[0].label : '';
+
+  const todoTexto = [
+    ...labels.map((l) => l.texto),
+    ...entidades.map((e) => e.texto),
+    bestGuess,
+  ]
+    .join(' ')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+
+  // Fauna vs flora pelos sinais do texto.
+  const sinaisFlora = ['plant', 'planta', 'flowering plant', 'aquatic plant', 'planta aquatica', 'aquarium plant',
+    'leaf', 'folha', 'moss', 'musgo', 'fern', 'samambaia', 'alga', 'algae', 'anubias',
+    'echinodorus', 'cryptocoryne', 'bucephalandra', 'java moss', 'tropica', 'pteridophyte',
+    'tracheophyte', 'macrophyte'];
+  const sinaisFauna = ['fish', 'peixe', 'guppy', 'betta', 'tetra', 'cichlid', 'ciclideo', 'ciclídeo',
+    'shrimp', 'camarao', 'camarão', 'snail', 'caracol', 'caramujo', 'crayfish', 'lagosta',
+    'catfish', 'cascudo', 'goldfish', 'molly', 'platy', 'swordtail', 'barbo', 'danio',
+    'rasbora', 'loach', 'botia', 'angelfish', 'acara', 'acará', 'neon tetra', 'oscar',
+    'discus', 'gourami', 'aquatic animal', 'animal aquatico', 'freshwater fish',
+    'peixe de agua doce', 'invertebrate', 'crustacean', 'crustaceo', 'turtle', 'tartaruga',
+    'axolotl', 'axolote', 'dwarf shrimp', 'crystal red', 'cherry shrimp', 'amber'];
+  const floraPontos = sinaisFlora.reduce((acc, s) => acc + (todoTexto.includes(s) ? 1 : 0), 0);
+  const faunaPontos = sinaisFauna.reduce((acc, s) => acc + (todoTexto.includes(s) ? 1 : 0), 0);
+  let tipo = '';
+  if (floraPontos > faunaPontos) tipo = 'flora';
+  else if (faunaPontos > floraPontos) tipo = 'fauna';
+
+  // Nome científico (binomial "Gênero espécie") extraído das entidades da web.
+  let nomeCientifico = '';
+  const binomial = /([A-ZÀ-Ü][a-zà-ü]+)\s+([a-zà-ü]+)/g;
+  for (const e of entidades) {
+    let m;
+    const copia = new RegExp(binomial.source, 'g');
+    while ((m = copia.exec(e.texto))) {
+      const candidato = `${m[1]} ${m[2]}`;
+      const chave = candidato.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (VISION_STOPWORDS.has(chave) || VISION_GENERICO.test(candidato)) continue;
+      // Evita capturar nomes de pessoas/empresas/páginas como binômio.
+      if (/(ltd|inc|company|s.a|import|export|produtos|aquario|aquarium|tropical|world|fish)$/i.test(candidato)) continue;
+      nomeCientifico = candidato;
+      break;
+    }
+    if (nomeCientifico) break;
+  }
+
+  // Melhor nome popular: candidatos específicos, com maior score. Preferimos o
+  // que NÃO é binomial (ex.: "Anubias", "Guppy") sobre o nome científico como
+  // nome comum (ex.: "Anubias barteri" vira o nomeCientifico, não o popular).
+  const candidatos = [
+    ...entidades.map((e) => ({ texto: e.texto, score: e.score })),
+    ...labels.map((l) => ({ texto: l.texto, score: l.score })),
+    ...(bestGuess ? [{ texto: bestGuess, score: 90 }] : []),
+  ];
+  const ehBinomial = (t) => /^[A-ZÀ-Ü][a-zà-ü]+\s+[a-zà-ü]+$/.test(t.trim());
+  const especies = candidatos.filter((c) => visaoNomeEhEspecie(c.texto)).sort((a, b) => b.score - a.score);
+  const naoBinomial = especies.filter((c) => !ehBinomial(c.texto));
+  const melhorNome = naoBinomial[0] || especies[0] || null;
+  const nomeComum = (melhorNome && melhorNome.texto) || labels[0]?.texto || 'Espécie identificada';
+  const confianca = Math.min(
+    100,
+    (melhorNome && melhorNome.score) || Math.round((labels[0]?.score || 0) * 1)
+  );
+
+  if (!tipo && labels.length === 0) throw new Error('Google Vision: nenhum rótulo identificado');
+
+  return normalizarResultado({
+    provedor: 'GoogleVision',
+    confianca,
+    tipo,
+    nomeComum,
+    nomeCientifico,
+    familia: '—',
+    observacoes: `Identificação via Google Cloud Vision (labels + web). ${nomeCientifico ? 'Nome científico extraído das entidades web.' : ''}`.trim(),
+  });
+}
+
 // Trefle.io — busca de PLANTAS por nome (base botânica com 400k+ espécies).
 // Requer TREFLE_TOKEN (trefle.io). Recebe o nome identificado (popular ou
 // científico) e retorna dados de flora enriquecidos. Não identifica por foto.
@@ -3918,4 +4217,4 @@ app.listen(PORT, () => {
     console.log(`  Usuários:   /admin-usuarios`);
   });
 }
-module.exports = { app, viaGemini, viaPlantNet, viaOpenAI, validarFotoGemini, validarFotoOpenAI, filtrarCronogramaSeguro, detectarFaunaSensivel };
+module.exports = { app, viaGemini, viaPlantNet, viaOpenAI, viaGoogleVision, classificarTipoGemini, validarFotoGemini, validarFotoOpenAI, filtrarCronogramaSeguro, detectarFaunaSensivel };

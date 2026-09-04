@@ -363,6 +363,10 @@ function normalizarResultado(dados) {
 
 const AI_TIMEOUT_MS = 25000;
 
+// Timeout do refino de decisão: menor que o padrão para não estourar o tempo
+// total do request (o refino é uma chamada extra após GV+Gemini+OpenAI).
+const REFINO_TIMEOUT_MS = 18000;
+
 const PROMPT_VALIDACAO =
   'Você é o verificador de fotos de um aplicativo de aquarismo de água doce. Analise a imagem e responda ' +
   'APENAS com JSON válido no formato {"valida": true} ou {"valida": false, "motivo": "explicação curta em português"}. ' +
@@ -794,6 +798,67 @@ async function viaGemini(base64, mime, textoExtra, sistemaPrompt) {
   return normalizarResultado({ provedor: 'Gemini', ...dados });
 }
 
+// Refino de decisão: quando os provedores discordam ou a confiança é baixa, uma
+// chamada extra do Gemini Flash vê a foto + a lista curta de candidatos e
+// escolhe a espécie final (restringida à lista). Custo baixo (~US$ 0,002) e só
+// dispara em caso de dúvida.
+const PROMPT_REFINO_CANDIDATOS =
+  'Você é um ictiólogo especialista em peixes e invertebrados de aquário de água doce. ' +
+  'Vários sistemas identificaram a foto com resultados DIVERGENTES. Sua tarefa é escolher, ENTRE OS ' +
+  'CANDIDATOS ABAIXO, a espécie que MELHOR corresponde à foto. ' +
+  'Compare: forma e altura do corpo, padrão de listras/manchas, cores, formato e posição das nadadeiras, ' +
+  'cauda, boca e olhos. Não escolha por semelhança superficial. ' +
+  'Se houver dúvida real entre dois candidatos, escolha o mais provável e baixe a confianca (40-55), ' +
+  'explicando a dúvida em "observacoes". ' +
+  'Responda APENAS com JSON válido no formato: ' +
+  '{"tipo":"fauna","confianca":0 a 100,"nomeComum":"nome popular em português","nomeCientifico":"nome científico",' +
+  '"familia":"família","origem":"origem","tamanho":"ex: até 5 cm","temperatura":"ex: 23 - 27 °C","ph":"ex: 6,0 - 7,0",' +
+  '"dureza":"ex: 5 - 12 °dH","dieta":"alimentação","comportamento":"comportamento","aquarioMinimo":"ex: 40 L",' +
+  '"dificuldade":"fácil/médio/avançado","iluminacao":"baixa/média/alta","co2":"opcional/recomendado/necessário",' +
+  '"crescimento":"lento/médio/rápido","tipoPlanta":"","observacoes":"curtas"}. ' +
+  'A espécie escolhida DEVE ser um dos CANDIDATOS.';
+
+async function viaGeminiRefino(base64, mime, candidatos) {
+  const modelo = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
+    {
+      method: 'POST',
+      signal: AbortSignal.timeout(REFINO_TIMEOUT_MS),
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': process.env.GEMINI_API_KEY,
+      },
+      body: JSON.stringify({
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              { inline_data: { mime_type: mime, data: base64 } },
+              { text: `Escolha a melhor espécie entre: ${candidatos}.` },
+            ],
+          },
+        ],
+        systemInstruction: { parts: [{ text: PROMPT_REFINO_CANDIDATOS }] },
+        generationConfig: {
+          responseMimeType: 'application/json',
+          maxOutputTokens: 700,
+        },
+      }),
+    }
+  );
+  if (!res.ok) {
+    const texto = await res.text().catch(() => '');
+    throw new Error(`Gemini refino (HTTP ${res.status}): ${texto.slice(0, 300)}`);
+  }
+  const json = await res.json();
+  const conteudo = json.candidates?.[0]?.content?.parts?.map((p) => p.text || '').join('');
+  if (!conteudo) throw new Error('Gemini refino: resposta vazia');
+  const dados = JSON.parse(conteudo);
+  if (dados.tipo !== 'fauna') throw new Error('Gemini refino: não é fauna');
+  return normalizarResultado({ provedor: 'Gemini', ...dados });
+}
+
 async function validarFotoGemini(base64, mime, prompt) {
   const modelo = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
   const res = await fetch(
@@ -1102,10 +1167,9 @@ app.post('/identify', async (req, res) => {
   }
 
   if (resultados.length > 0) {
-    // Confiança PONDERADA: especialistas valem mais que IAs genéricas.
-    // Google Vision (fauna) = 2.5; PlantNet (plantas) = 2.5; Google Vision
-    // (flora) = 2.0; Fishial (peixes) = 2.0; Trefle = 1.5; SpeciesLink = 1.3;
-    // Gemini/OpenAI = 1.0.
+    // Confiança PONDERADA + ENSEMBLE: especialistas valem mais que IAs
+    // genéricas, mas a concordância entre provedores (mesma espécie canônica)
+    // e a canonicalização no catálogo entram na decisão.
     const PESOS = {
       GoogleVision: 2.5,
       Fishial: 2.0,
@@ -1115,22 +1179,53 @@ app.post('/identify', async (req, res) => {
       Gemini: 1.0,
       OpenAI: 1.0,
     };
-    const pontuacao = (x) => {
-      const base = Number(x.r && x.r.confianca) || 0;
-      // Google Vision é o especialista de FAUNA (2.5); em FLORA vale 2.0 porque
-      // o PlantNet é o especialista de plantas (2.5).
-      const peso =
-        x.nome === 'GoogleVision' && x.r && x.r.tipo === 'flora'
-          ? 2.0
-          : PESOS[x.nome] || 1.0;
-      // SpeciesLink só enriquece; não deve ganhar como identificador principal.
-      const penalidade = x.nome === 'SpeciesLink' ? 40 : 0;
-      return base * peso - penalidade;
-    };
-    let melhor = resultados[0];
-    for (const cand of resultados.slice(1)) {
-      if (pontuacao(cand) > pontuacao(melhor)) melhor = cand;
+    const pesoDe = (x) =>
+      x.nome === 'GoogleVision' && x.r && x.r.tipo === 'flora' ? 2.0 : PESOS[x.nome] || 1.0;
+
+    // Agrupa por espécie canônica (resolvida no catálogo) para medir concordância.
+    const ident = resultados.filter((x) => x.nome !== 'SpeciesLink' && x.nome !== 'Trefle');
+    const grupos = new Map();
+    for (const x of ident) {
+      const chave = chaveCanonica(x.r) || `__${x.nome}`;
+      if (!grupos.has(chave)) grupos.set(chave, []);
+      grupos.get(chave).push(x);
     }
+    const divergencia = grupos.size > 1;
+    const pontuaGrupo = (lista) => {
+      let s = 0;
+      let maiorConf = 0;
+      for (const x of lista) {
+        const c = Number(x.r && x.r.confianca) || 0;
+        if (c > maiorConf) maiorConf = c;
+        s += c * pesoDe(x);
+      }
+      if (lista.length >= 2) s += 15; // bônus de concordância
+      if (lista.some((x) => x.nome === 'SpeciesLink')) s -= 40;
+      // Sem concordância, um Google Vision isolado não domina pelo multiplicador
+      // 2.5 sozinho: cai para a confiança crua (o refino decide quando divergir).
+      if (divergencia && lista.length === 1 && lista[0].nome === 'GoogleVision') {
+        s = maiorConf;
+      }
+      return s;
+    };
+    let melhorGrupo = null;
+    let melhorScore = -Infinity;
+    let segundoMelhorScore = -Infinity;
+    for (const [, lista] of grupos) {
+      const s = pontuaGrupo(lista);
+      if (s > melhorScore) {
+        segundoMelhorScore = melhorScore;
+        melhorScore = s;
+        melhorGrupo = lista;
+      } else if (s > segundoMelhorScore) {
+        segundoMelhorScore = s;
+      }
+    }
+    const candidatosMelhor = [...melhorGrupo]
+      .filter((x) => x.nome !== 'SpeciesLink')
+      .sort((a, b) => (Number(b.r.confianca) || 0) - (Number(a.r.confianca) || 0));
+    let melhor = candidatosMelhor[0] || melhorGrupo[0];
+
     // Proteção fauna-vs-flora: se o melhor por pontuação é uma planta (PlantNet/
     // Trefle) mas uma IA de visão (Google Vision/Gemini/OpenAI) apontou FAUNA com
     // confiança razoável, prioriza a fauna (evita "peixe → planta").
@@ -1144,6 +1239,42 @@ app.post('/identify', async (req, res) => {
       const visaoTop = vision.sort((a, b) => (Number(b.r.confianca) || 0) - (Number(a.r.confianca) || 0))[0];
       if ((Number(visaoTop.r.confianca) || 0) >= 60) melhor = visaoTop;
     }
+
+    // REFINO com Gemini quando há dúvida (discordância ou confiança baixa): a
+    // imagem + a lista curta de candidatos decide a espécie final (fauna).
+    if (process.env.GEMINI_API_KEY && melhor.r && melhor.r.tipo === 'fauna') {
+      const gruposTop = [...grupos.entries()]
+        .sort((a, b) => pontuaGrupo(b[1]) - pontuaGrupo(a[1]))
+        .slice(0, 3);
+      const nomesCandidatos = [];
+      const vistosC = new Set();
+      for (const [, lista] of gruposTop) {
+        for (const x of lista) {
+          const e = resolverNoCatalogo(x.r);
+          const ci = (e && e.nomeCientifico) || x.r.nomeCientifico || '';
+          const nc = String(x.r.nomeComum || '').trim();
+          const chave = `${ci}|${nc}`;
+          if (!vistosC.has(chave)) { vistosC.add(chave); nomesCandidatos.push(`${nc} (${ci})`); }
+        }
+      }
+      const confiancaMelhor = Number(melhor.r.confianca) || 0;
+      // Dispara apenas em dúvida real: top-2 grupos próximos OU confiança baixa.
+      const precisaRefino =
+        (divergencia && segundoMelhorScore >= melhorScore - 15) || confiancaMelhor < 55;
+      if (nomesCandidatos.length >= 2 && precisaRefino) {
+        try {
+          const refino = await viaGeminiRefino(base64, prefixo, nomesCandidatos.join('; '));
+          const refinoFinal = aplicarFichaCanonica(refino, resolverNoCatalogo(refino));
+          if (refinoFinal.nomeCientifico && refinoFinal.nomeCientifico !== 'Não identificado') {
+            melhor.nome = 'Gemini';
+            melhor.r = refinoFinal;
+          }
+        } catch (e) {
+          console.warn('Refino Gemini falhou, mantendo ensemble:', e.message);
+        }
+      }
+    }
+
     // Enriquecimento SpeciesLink: se não é o principal, funde a origem no principal.
     const splEnriq = resultados.find((x) => x.nome === 'SpeciesLink' && x.r);
     if (splEnriq && melhor.nome !== 'SpeciesLink') {
@@ -1152,6 +1283,11 @@ app.post('/identify', async (req, res) => {
         melhor.r.origem = melhor.r.origem && melhor.r.origem !== '—' ? melhor.r.origem : origemSpl;
         melhor.r.observacoes = [melhor.r.observacoes, splEnriq.r.observacoes].filter(Boolean).join(' ');
       }
+    }
+
+    // Canonicaliza o vencedor para a espécie do catálogo (ficha consistente).
+    if (melhor && melhor.r) {
+      melhor.r = aplicarFichaCanonica(melhor.r, resolverNoCatalogo(melhor.r));
     }
     const enr = await comFoto(melhor.r);
     // Une as opções dos demais provedores quando houver divergência.
@@ -3668,8 +3804,32 @@ function lerCatalogo(nome) {
 // (3) fauna brasileira e complementar com nome científico real. Deduplica por
 // nome científico e limita a LIMITE_NOMES (800) para caber no contexto sem
 // inflar o custo por chamada.
-const LIMITE_NOMES_PROMPT = 800;
+const LIMITE_NOMES_PROMPT = 1600;
 let listaEspeciesPrompt = null;
+
+// Grupos de fauna que caíam fora da lista do prompt (limite antigo de 800) e
+// causavam erros de identificação (ex.: Polypterus endlicheri/ornatipinnis/
+// delhezi/lapradei, botias-zebra, otocinclus zebra). Estas espécies são movidas
+// para o início da lista para garantirem vaga dentro do limite.
+const GRUPOS_PRIORITARIOS_PROMPT = [
+  /^polypterus/i,
+  /hypancistrus zebra/i,
+  /maylandia zebra/i,
+  /^botia/i,
+  /otocinclus cocama/i,
+  /neritina natalensis/i,
+  /^danio/i,
+  /^corydoras/i,
+  /^apistogramma/i,
+  /^paracheirodon/i,
+  /^poecilia/i,
+  /^xiphophorus/i,
+  /^pseudotropheus/i,
+  /^aulonocara/i,
+  /^melanochromis/i,
+  /^labidochromis/i,
+];
+
 function obterListaEspeciesPrompt() {
   if (listaEspeciesPrompt) return listaEspeciesPrompt;
   const especies = lerCatalogo('especies') || [];
@@ -3702,12 +3862,148 @@ function obterListaEspeciesPrompt() {
     if (!chave || vistos.has(chave)) continue;
     vistos.add(chave);
     unicos.push(x);
-    if (unicos.length >= LIMITE_NOMES_PROMPT) break;
   }
 
-  const txt = unicos.map((x) => `${x.nc.trim()} (${x.ci.trim()})`).join(', ');
+  // Espécies dos grupos prioritários primeiro (garantem vaga no limite).
+  const ehPrioritaria = (x) => GRUPOS_PRIORITARIOS_PROMPT.some((rx) => rx.test(`${x.nc} ${x.ci}`));
+  const priorizadas = unicos.filter(ehPrioritaria);
+  const demais = unicos.filter((x) => !ehPrioritaria(x));
+  const ordenadas = [...priorizadas, ...demais].slice(0, LIMITE_NOMES_PROMPT);
+
+  const txt = ordenadas.map((x) => `${x.nc.trim()} (${x.ci.trim()})`).join(', ');
   listaEspeciesPrompt = txt || 'nenhuma';
   return listaEspeciesPrompt;
+}
+
+// ======================= CANONICALIZAÇÃO NO CATÁLOGO =======================
+// Resolve os nomes devolvidos pelos provedores para a espécie canônica do
+// catálogo do app (nome científico exato, nome comum, ou gênero). Garante que a
+// ficha devolvida seja de uma espécie real do catálogo e permite medir a
+// concordância entre provedores (ensemble).
+let catalogoCanonico = null;
+function obterCatalogoCanonico() {
+  if (catalogoCanonico) return catalogoCanonico;
+  const todos = [
+    ...(lerCatalogo('especies') || []),
+    ...(lerCatalogo('faunaComplementar') || []),
+    ...(lerCatalogo('faunaBrasileira') || []),
+  ];
+  const porCi = new Map();
+  const porNc = new Map();
+  for (const e of todos) {
+    const ci = String(e.nomeCientifico || '').trim();
+    const nc = String(e.nomeComum || e.nome || '').trim();
+    if (ci) {
+      const chave = normalizarTxt(ci);
+      if (!porCi.has(chave)) porCi.set(chave, e);
+    }
+    if (nc) {
+      const chaveN = normalizarTxt(nc);
+      if (!porNc.has(chaveN)) porNc.set(chaveN, e);
+    }
+  }
+  catalogoCanonico = { porCi, porNc, todos };
+  return catalogoCanonico;
+}
+
+function normalizarTxt(s) {
+  return String(s || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function generoDe(ci) {
+  const m = String(ci || '').trim().match(/^([a-zA-ZÀ-Üà-ü]+)\s+/);
+  return m ? m[1].toLowerCase() : '';
+}
+
+// Encontra a espécie canônica do catálogo para um resultado de provedor.
+function resolverNoCatalogo(resultado) {
+  const cat = obterCatalogoCanonico();
+  const alvos = [];
+  const ci = String(resultado.nomeCientifico || '').trim();
+  const nc = String(resultado.nomeComum || '').trim();
+  if (ci && ci !== 'Não identificado') alvos.push(ci);
+  if (nc && nc !== 'Espécie não catalogada' && nc !== 'Espécie identificada') alvos.push(nc);
+
+  // 1) nome científico exato (normalizado).
+  for (const a of alvos) {
+    const e = cat.porCi.get(normalizarTxt(a));
+    if (e) return e;
+  }
+  // 2) nome comum exato (normalizado).
+  for (const a of alvos) {
+    const e = cat.porNc.get(normalizarTxt(a));
+    if (e) return e;
+  }
+  // 3) gênero + palavra de espécie (com tolerância a variações de escrita,
+  //    ex.: "Polypterus endlicheri" → "Polypterus endlicherii").
+  for (const a of alvos) {
+    const e = casarPorTokens(a, cat.todos);
+    if (e) return e;
+  }
+  // 4) último recurso: primeira espécie do gênero no catálogo.
+  for (const a of alvos) {
+    const g = generoDe(a);
+    if (g) {
+      const e = cat.todos.find((x) => generoDe(x.nomeCientifico || '') === g);
+      if (e) return e;
+    }
+  }
+  return null;
+}
+
+// Casa um texto (ex.: "Polypterus endlicheri endlicheri") com uma espécie do
+// catálogo pelo gênero (1ª palavra) + palavra de espécie (2ª), tolerando
+// pequenas variações de escrita (uma palavra contém a outra, mín. 6 letras).
+function casarPorTokens(texto, todos) {
+  const toks = normalizarTxt(texto).split(' ').filter((t) => t.length > 2);
+  if (toks.length < 2) return null;
+  const [g, esp] = toks;
+  for (const e of todos) {
+    const s = normalizarTxt(`${e.nomeCientifico || ''} ${e.nomeComum || ''}`).split(' ');
+    if (!s.includes(g)) continue;
+    const casa = s.some(
+      (t) =>
+        t === esp ||
+        (esp.length >= 6 && t.length >= 6 && (t.startsWith(esp) || esp.startsWith(t)))
+    );
+    if (casa) return e;
+  }
+  return null;
+}
+
+// Aplica a ficha canônica sobre o resultado do provedor (mantém o que o
+// provedor devolveu quando o catálogo não tem o campo).
+function aplicarFichaCanonica(r, e) {
+  if (!e) return r;
+  const novo = { ...r };
+  const campos = ['nomeComum', 'nomeCientifico', 'familia', 'origem', 'tamanho', 'temperatura',
+    'ph', 'dureza', 'dieta', 'comportamento', 'aquarioMinimo', 'dificuldade', 'iluminacao',
+    'co2', 'crescimento', 'tipoPlanta'];
+  for (const c of campos) {
+    const v = e[c];
+    if (v !== undefined && v !== null && String(v).trim() !== '' && String(v).trim() !== '—') {
+      novo[c] = String(v).trim();
+    }
+  }
+  if (e.observacoes && String(e.observacoes).trim() && !/\.docx?$/i.test(String(e.observacoes).trim()) && !novo.observacoes) {
+    novo.observacoes = String(e.observacoes).trim();
+  }
+  return novo;
+}
+
+// Chave canônica (espécie resolvida no catálogo, ou nome científico cru).
+function chaveCanonica(r) {
+  const e = resolverNoCatalogo(r);
+  if (e && e.nomeCientifico) return normalizarTxt(e.nomeCientifico);
+  const ci = String(r.nomeCientifico || '').trim();
+  if (ci && ci !== 'Não identificado') return normalizarTxt(ci);
+  return normalizarTxt(r.nomeComum || '');
 }
 
 app.get('/catalogos', (req, res) => {

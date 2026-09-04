@@ -361,11 +361,14 @@ function normalizarResultado(dados) {
   };
 }
 
-const AI_TIMEOUT_MS = 25000;
+const AI_TIMEOUT_MS = 15000;
 
 // Timeout do refino de decisão: menor que o padrão para não estourar o tempo
-// total do request (o refino é uma chamada extra após GV+Gemini+OpenAI).
-const REFINO_TIMEOUT_MS = 18000;
+// total do request (o refino é uma chamada extra após os provedores).
+const REFINO_TIMEOUT_MS = 12000;
+
+// Timeout da validação de foto (é só um sim/não; não precisa de 20s).
+const VALIDACAO_TIMEOUT_MS = 8000;
 
 const PROMPT_VALIDACAO =
   'Você é o verificador de fotos de um aplicativo de aquarismo de água doce. Analise a imagem e responda ' +
@@ -522,6 +525,10 @@ const PROMPT_SISTEMA =
   'COBERTURA: identifique peixes, plantas, invertebrados (camarões, caramujos, caranguejos, lagostins, hidras, planárias, copépodes), ' +
   'anfíbios (axolotes, rãs), insetos e larvas aquáticas (ex.: "tigre d\'água", barata-d\'água, ninfas) e tartarugas de água doce. ' +
   'REGRAS DE PRECISÃO (MUITO IMPORTANTES — NUNCA retorne nomes genéricos): ' +
+  '(0) ÁGUA DOCE vs MARINHO: este app é para aquários de ÁGUA DOCE. NUNCA identifique peixes marinhos. ' +
+  'Se a foto parece um peixe marinho (cores vivas de recife, listras verticais pretas e brancas como "serranus" ou "goatfish"), ' +
+  'verifique se NÃO é um ciclídeo de água doce com padrão similar. Goatfish/Serranus são MARINHOS e NÃO existem em aquários de água doce. ' +
+  'Se o peixe é de aquário de água doce e tem listras, provavelmente é um ciclídeo (Malawi, Tanganyika, etc.) e NÃO um peixe marinho. ' +
   '(1) NUNCA responda apenas "ciclídeo", "acará", "peixe" ou "peixe de aquário". SEMPRE dê a espécie mais específica possível, com nome popular e científico. ' +
   '(2) "Acará" é um termo genérico — identifique a ESPÉCIE exata (ex.: Acará-bandeira Pterophyllum scalare, Acará-disco Symphysodon, ' +
   'Acará-azul Aequidens pulcher, Acará-da-floresta Mesonauta festivus, Ciclídeo do Texas Herichthys cyanoguttatus, Texas Red/Herichthys carpintis "Texas red" que tem manchas vermelho-alaranjadas e pintas azuis, etc.). ' +
@@ -529,6 +536,16 @@ const PROMPT_SISTEMA =
   '(3) Para ciclídeos africanos do Malawi, NUNCA diga apenas "ciclídeo do Malawi". Dê a espécie ou grupo específico: Aulonocara (Peacock, ex.: Aulonocara stuartgranti, Aulonocara baenschi "Sunshine"), ' +
   'Labidochromis caeruleus (Yellow Lab), Melanochromis auratus (Auratus), Maylandia/Pseudotropheus zebra (Zebra, listras verticais), ' +
   'Pseudotropheus acei (Acei), Cyrtocara moorii (Golfinho do Malawi), Tropheus (Tanganyika), Altolamprologus, etc. ' +
+  'CUIDADO com Haplochromis obliquidens (Zebra Oblíquo / Obliquidens) — ciclídeo de ÁGUA DOCE do LAGO VICTORIA ' +
+  '(NÃO do Malawi, NÃO marinho). É um CICLÍDEO PEQUENO (macho ~8-10 cm), corpo ovalado/alongado, ' +
+  'macho com corpo laranja/avermelhado e 6-8 barras OBLÍQUAS (diagonais) escuras no flanco, ' +
+  'fêmea prateada/olivácea com barras escuras mais discretas. ' +
+  'PARECE Maylandia zebra (listras pretas e brancas) mas as barras do obliquidens são OBLÍQUAS ' +
+  '(diagonais, inclinadas para trás) enquanto as do zebra são VERTICAIS. ' +
+  'NÃO confundir com peixes MARINHOS como goatfish/serranus — Haplochromis obliquidens é de ÁGUA DOCE, ' +
+  'tem corpo de ciclídeo (boca terminal, nadadeiras arredondadas), viv em cardume, ' +
+  'e NÃO tem barbilhões (bbyss) no queixo como goatfish. ' +
+  'Origem: Lago Vitoria, África Oriental (Quênia, Tanzânia, Uganda). ' +
   'Um "Aulonocara" (Peacock) tem corpo alongado com coloração uniforme e brilhante (azul/amarelo/laranja) e nadadeiras longas, sem listras verticais — diferente de um Mbuna listrado. ' +
   '(3.5) CUIDADO com ciclídeos AMERICANOS grandes, que NUNCA devem ser confundidos com ciclídeos do Malawi: ' +
   '"Green Terror" (Andinoacara rivulatus) tem corpo esverdeado com manchas escuras, bordas de barbatanas em tons amarelo/laranja, cabeça com padrão reticulado e barbatanas dorsais longas e pontiagudas no MACHO — origem América do Sul/Pacífico. ' +
@@ -859,13 +876,13 @@ async function viaGeminiRefino(base64, mime, candidatos) {
   return normalizarResultado({ provedor: 'Gemini', ...dados });
 }
 
-async function validarFotoGemini(base64, mime, prompt) {
+async function validarFotoGemini(base64, mime, prompt, timeoutMs) {
   const modelo = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${modelo}:generateContent`,
     {
       method: 'POST',
-      signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs || VALIDACAO_TIMEOUT_MS),
       headers: {
         'Content-Type': 'application/json',
         'x-goog-api-key': process.env.GEMINI_API_KEY,
@@ -901,10 +918,10 @@ async function validarFotoGemini(base64, mime, prompt) {
   return { valida: !!dados.valida, motivo: dados.motivo || '' };
 }
 
-async function validarFotoOpenAI(dataUrl, prompt) {
+async function validarFotoOpenAI(dataUrl, prompt, timeoutMs) {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
-    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs || VALIDACAO_TIMEOUT_MS),
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
@@ -1082,59 +1099,33 @@ app.post('/identify', async (req, res) => {
   }
 
   const resultados = [];
-  // Priorização INTELIGENTE: uma pré-classificação barata com Gemini decide a
-  // ordem dos especialistas antes de gastar créditos de identificação.
-  //  - FLORA  → PlantNet, Google Vision, Gemini
-  //  - FAUNA  → Google Vision, Fishial, Gemini
-  //  - indefinido → Google Vision, Fishial, PlantNet, Gemini
-  let tipoPrevisto = '';
-  if (process.env.GEMINI_API_KEY) {
-    try {
-      tipoPrevisto = await classificarTipoGemini(base64, prefixo);
-    } catch (e) {
-      console.error('Falha na pré-classificação (Gemini):', e.message);
-    }
-  }
-  const ORDENS = {
-    flora: [
-      ['PlantNet', () => viaPlantNet(base64, prefixo)],
-      ['GoogleVision', () => viaGoogleVision(base64, prefixo)],
-      ['Gemini', () => viaGemini(base64, prefixo)],
-      ['OpenAI', () => viaOpenAI(dataUrl)],
-    ],
-    fauna: [
-      ['GoogleVision', () => viaGoogleVision(base64, prefixo)],
-      ['Fishial', () => viaFishial(base64, prefixo)],
-      ['Gemini', () => viaGemini(base64, prefixo)],
-      ['OpenAI', () => viaOpenAI(dataUrl)],
-    ],
-    padrao: [
-      ['GoogleVision', () => viaGoogleVision(base64, prefixo)],
-      ['Fishial', () => viaFishial(base64, prefixo)],
-      ['PlantNet', () => viaPlantNet(base64, prefixo)],
-      ['Gemini', () => viaGemini(base64, prefixo)],
-      ['OpenAI', () => viaOpenAI(dataUrl)],
-    ],
-  };
-  const tentativas = ORDENS[tipoPrevisto] || ORDENS.padrao;
-  for (const [nome, fn] of tentativas) {
-    if (nome === 'Gemini' && !process.env.GEMINI_API_KEY) continue;
-    if (nome === 'GoogleVision' && !process.env.GOOGLE_VISION_API_KEY) continue;
-    if (nome === 'Fishial' && (!process.env.FISHIAL_CLIENT_ID || !process.env.FISHIAL_CLIENT_SECRET)) continue;
-    if (nome === 'PlantNet' && !process.env.PLANTNET_API_KEY) continue;
-    if (nome === 'OpenAI' && !process.env.OPENAI_API_KEY) continue;
-    try {
-      const r = await fn();
-      resultados.push({ nome, r });
-    } catch (e) {
-      console.error(`Falha ${nome}:`, e.message);
-      if (e instanceof FotoInvalidaError) {
-        erros.push(`${nome} (foto inválida): ${e.message}`);
+  // Todos os provedores rodam EM PARALELO: o tempo total ≈ o provedor mais
+  // lento (não a soma), evitando estourar o timeout de 60s do app. A escolha
+  // final é feita pelo ensemble ponderado, então a ordem de chamada não importa
+  // (a pré-classificação Gemini foi removida por ser uma chamada redundante).
+  const provedores = [
+    ['GoogleVision', () => viaGoogleVision(base64, prefixo), () => !!process.env.GOOGLE_VISION_API_KEY],
+    ['Fishial', () => viaFishial(base64, prefixo), () => !!(process.env.FISHIAL_CLIENT_ID && process.env.FISHIAL_CLIENT_SECRET)],
+    ['PlantNet', () => viaPlantNet(base64, prefixo), () => !!process.env.PLANTNET_API_KEY],
+    ['Gemini', () => viaGemini(base64, prefixo), () => !!process.env.GEMINI_API_KEY],
+    ['OpenAI', () => viaOpenAI(dataUrl), () => !!process.env.OPENAI_API_KEY],
+  ];
+  const ativos = provedores.filter(([, , habilitado]) => habilitado());
+  const nomesAtivos = ativos.map(([nome]) => nome);
+  const resultadosParalelos = await Promise.allSettled(ativos.map(([, fn]) => fn()));
+  resultadosParalelos.forEach((s, i) => {
+    const nome = nomesAtivos[i];
+    if (s.status === 'fulfilled') {
+      resultados.push({ nome, r: s.value });
+    } else {
+      console.error(`Falha ${nome}:`, s.reason && s.reason.message);
+      if (s.reason instanceof FotoInvalidaError) {
+        erros.push(`${nome} (foto inválida): ${s.reason.message}`);
       } else {
-        erros.push(`${nome}: ${e.message}`);
+        erros.push(`${nome}: ${s.reason && s.reason.message}`);
       }
     }
-  }
+  });
 
   // Enriquecimento complementar:
   //  - Se identificou FLORA, consulta o Trefle (base botânica) para validar/refinar.

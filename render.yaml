@@ -37,7 +37,7 @@ services:
         sync: false
       # URL pública do front (ex.: https://aquariapp.netlify.app)
       - key: ALLOWED_ORIGINS
-        value: https://aquariapp.com.br,https://www.aquariapp.com.br,https://app.aquariapp.com.br,https://aquariapp-tester.pages.dev
+        value: https://aquariapp.com.br,https://www.aquariapp.com.br,https://app.aquariapp.com.br,https://aquariapp-tester.pages.dev,https://aquariapp.pages.dev
       # URL pública deste backend (ex.: https://aquariapp-ia.onrender.com)
       - key: PUBLIC_BASE_URL
         value: https://aquariapp-ia.onrender.com

@@ -4,7 +4,7 @@
  *  - Tudo o mais (navegação, catálogos, API, rotas de IA): NETWORK-FIRST.
  *    Nunca respondemos do cache em rotas de API — o servidor é a fonte da verdade.
  */
-const CACHE = 'aquariapp-v3';
+const CACHE = 'aquariapp-v4';
 const ESTATICOS = new Set([
   '/manifest.json',
   '/favicon.ico',
@@ -73,5 +73,78 @@ self.addEventListener('fetch', (event) => {
       }
       return caches.match(req);
     })
+  );
+});
+
+// ---- Web Push (lembretes) ----
+
+self.addEventListener('push', (event) => {
+  let dados = null;
+  try {
+    dados = event.data ? event.data.json() : null;
+  } catch (e) {
+    dados = null;
+  }
+  const titulo = (dados && dados.title) || 'AquarIApp';
+  const corpo = (dados && dados.body) || '';
+  event.waitUntil(
+    self.registration.showNotification(titulo, {
+      body: corpo,
+      icon: '/icons/icon-192.png',
+      badge: '/icons/icon-192.png',
+      tag: 'aquariapp-lembrete',
+      vibrate: [200, 100, 200],
+    })
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((lista) => {
+      for (const cliente of lista) {
+        if ('focus' in cliente) return cliente.focus();
+      }
+      return self.clients.openWindow('/');
+    })
+  );
+});
+
+// ---- Keep-alive no Service Worker (best-effort) ----
+// Periodic Background Sync mantém o servidor acordado mesmo com o app em
+// background (PWA instalado no Android/Chrome). Se o navegador não suportar,
+// o app em primeiro plano continua fazendo o ping (keepAlive.js).
+const PING_URL = 'https://aquariapp-ia.onrender.com/ping';
+const PERIODIC_TAG = 'aquariapp-ping';
+
+async function pingServidor() {
+  try {
+    await fetch(PING_URL, { method: 'GET', mode: 'no-cors', cache: 'no-store' });
+  } catch (e) {
+    // silencioso: keep-alive é best-effort
+  }
+}
+
+self.addEventListener('periodicsync', (event) => {
+  if (event.tag === PERIODIC_TAG) {
+    event.waitUntil(pingServidor());
+  }
+});
+
+// Registra o periodic sync quando o SW ativa (o app também pode registrá-lo
+// via navigator.serviceWorker.ready + registration.periodicSync.register).
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    (async () => {
+      try {
+        if ('periodicSync' in self.registration) {
+          await self.registration.periodicSync.register(PERIODIC_TAG, {
+            minInterval: 15 * 60 * 1000,
+          });
+        }
+      } catch (e) {
+        // navegador sem suporte / permissão negada: ignora
+      }
+    })()
   );
 });

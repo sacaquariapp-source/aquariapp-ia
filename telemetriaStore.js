@@ -27,26 +27,28 @@ function normalizarPlano(p) {
   return PLANOS_VALIDOS.includes(v) ? v : '';
 }
 
-// --- Uso de seções (evento avulso com plano e data) ---
-function registrarSecao(secao, plano) {
+// --- Uso de seções (evento avulso com plano, dispositivo e data) ---
+function registrarSecao(secao, plano, dispositivoId) {
   const dados = ler();
   const eventos = dados.eventosSecao || [];
   eventos.push({
     ts: Date.now(),
     plano: normalizarPlano(plano),
     secao: String(secao || '').trim().slice(0, 60),
+    dispositivoId: String(dispositivoId || '').trim().slice(0, 120),
   });
   salvar({ ...dados, eventosSecao: eventos });
 }
 
-// --- Perfil de aquários (evento avulso com plano e data) ---
-function registrarPerfilAquario(aquario, plano) {
+// --- Perfil de aquários (evento avulso com plano, dispositivo e data) ---
+function registrarPerfilAquario(aquario, plano, dispositivoId) {
   const dados = ler();
   const eventos = dados.eventosAquario || [];
   eventos.push({
     ts: Date.now(),
     plano: normalizarPlano(plano),
     aquario: aquario || {},
+    dispositivoId: String(dispositivoId || '').trim().slice(0, 120),
   });
   salvar({ ...dados, eventosAquario: eventos });
 }
@@ -95,7 +97,22 @@ function resumo({ plano = '', de = null, ate = null } = {}) {
     perfil.total += 1;
   }
 
-  return { secoes: listaSecoes, perfilAquarios: perfil };
+  // Dispositivos únicos
+  const dispositivosSecao = new Set();
+  const dispositivosAquario = new Set();
+  for (const ev of dados.eventosSecao || []) {
+    if (filtroPlano && ev.plano !== filtroPlano) continue;
+    if (!noPeriodo(ev.ts, de, ate)) continue;
+    if (ev.dispositivoId) dispositivosSecao.add(ev.dispositivoId);
+  }
+  for (const ev of dados.eventosAquario || []) {
+    if (filtroPlano && ev.plano !== filtroPlano) continue;
+    if (!noPeriodo(ev.ts, de, ate)) continue;
+    if (ev.dispositivoId) dispositivosAquario.add(ev.dispositivoId);
+  }
+  const todosDispositivos = new Set([...dispositivosSecao, ...dispositivosAquario]);
+
+  return { secoes: listaSecoes, perfilAquarios: perfil, dispositivosAtivos: todosDispositivos.size };
 }
 
 module.exports = {

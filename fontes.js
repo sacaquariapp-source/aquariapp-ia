@@ -5,6 +5,11 @@
  *  - Aquarismo Paulista (WordPress REST API): fichas técnicas de peixes/plantas.
  *  - Fishipedia: fichas de peixes (slug = nome científico em minúsculas com hífens).
  *  - Chácara Takeyoshi: catálogo de plantas (índice próprio crawlado das 7 categorias).
+ *  - Trefle (API de plantas, requer TREFLE_TOKEN): nome comum PT, família e fotos.
+ *  - iNaturalist (API pública): nome comum, taxonomia e foto de referência.
+ *  - FishBase (API rOpenSci): família, ordem e classe dos peixes.
+ *  - SpeciesLink (rede CRIA, requer SPECIESLINK_API_KEY): ocorrências no Brasil.
+ *  - GBIF (API pública, sem chave): taxonomia validada, nome comum PT, família.
  *
  * A função principal é enriquecerComFontes(resultado), que preenche campos
  * vazios de um resultado da IA usando as fontes em cascata e retorna um
@@ -371,6 +376,283 @@ async function buscarChacaraTakeyoshi(termo) {
 }
 
 /* ============================================================
+ * 4. TREFLE (API de plantas — enriquecimento de flora)
+ *    Requer TREFLE_TOKEN (gratuito em trefle.io). Retorna nome
+ *    comum (PT), família, gênero e fotos da espécie.
+ * ============================================================ */
+const TREFLE_BASE = 'https://trefle.io/api/v1';
+
+async function buscarTrefle(termo) {
+  try {
+    const token = process.env.TREFLE_TOKEN;
+    if (!token) return null;
+    const busca = await obterTexto(
+      `${TREFLE_BASE}/species/search?token=${encodeURIComponent(token)}&q=${encodeURIComponent(termo)}&limit=1`,
+      { json: true }
+    );
+    const primeiro = busca?.data?.[0];
+    if (!primeiro) return null;
+
+    const nomeCientifico = primeiro.scientific_name || '';
+    const nomesPorIdioma = primeiro.common_names || {};
+    const nomeComumPT = (Array.isArray(nomesPorIdioma.por) && nomesPorIdioma.por[0]) || primeiro.common_name || '';
+    const fotos = (primeiro.images || []).filter((i) => i && i.url);
+
+    const r = {
+      provedor: 'Trefle',
+      confianca: null,
+      tipo: 'flora',
+      nomeComum: nomeComumPT || 'Planta identificada',
+      nomeCientifico: nomeCientifico || termo,
+      familia: primeiro.family || '—',
+      origem: '—',
+      tamanho: '—',
+      temperatura: '—',
+      ph: '—',
+      dureza: '—',
+      dieta: '—',
+      comportamento: '—',
+      aquarioMinimo: '—',
+      dificuldade: '—',
+      iluminacao: '—',
+      co2: '—',
+      crescimento: '—',
+      tipoPlanta: '—',
+      observacoes: primeiro.family_common_name
+        ? `Dados de cultivo e distribuição da base Trefle. Família: ${primeiro.family_common_name}.`
+        : 'Dados da base Trefle.',
+      foto: fotos[0] ? fotos[0].url : '',
+    };
+    return validarResultado(r) ? r : null;
+  } catch (e) {
+    console.error('[fontes] Trefle:', e.message);
+    return null;
+  }
+}
+
+/* ============================================================
+ * 5. iNaturalist (API pública — enriquecimento de fauna/flora)
+ *    Sem chave. Traz nome comum, rank taxonômico e foto de
+ *    referência da maior base colaborativa de biodiversidade.
+ * ============================================================ */
+const INAT_BASE = 'https://api.inaturalist.org/v1';
+
+async function buscarINaturalist(termo) {
+  try {
+    const busca = await obterTexto(
+      `${INAT_BASE}/taxa?q=${encodeURIComponent(termo)}&per_page=3&order=desc&order_by=observations_count`,
+      { json: true }
+    );
+    const resultados = busca?.results || [];
+    if (resultados.length === 0) return null;
+
+    const melhor = resultados.find((t) => t.rank === 'species') || resultados[0];
+    if (!melhor || !melhor.name) return null;
+
+    const foto =
+      melhor.default_photo?.large_url || melhor.default_photo?.medium_url || melhor.default_photo?.square_url || '';
+    const familiaAncestral =
+      (melhor.ancestors || []).find((a) => a.rank === 'family')?.name || '';
+
+    const r = {
+      provedor: 'iNaturalist',
+      confianca: null,
+      tipo: 'fauna',
+      nomeComum: melhor.preferred_common_name || 'Espécie não catalogada',
+      nomeCientifico: melhor.name,
+      familia: familiaAncestral || '—',
+      origem: '—',
+      tamanho: '—',
+      temperatura: '—',
+      ph: '—',
+      dureza: '—',
+      dieta: '—',
+      comportamento: '—',
+      aquarioMinimo: '—',
+      dificuldade: '—',
+      iluminacao: '—',
+      co2: '—',
+      crescimento: '—',
+      tipoPlanta: '—',
+      observacoes: melhor.observations_count
+        ? `${melhor.observations_count} observações registradas na comunidade iNaturalist.`
+        : 'Dados da comunidade iNaturalist.',
+      foto,
+    };
+    return validarResultado(r) ? r : null;
+  } catch (e) {
+    console.error('[fontes] iNaturalist:', e.message);
+    return null;
+  }
+}
+
+/* ============================================================
+ * 6. FISHBASE (API rOpenSci — enriquecimento de peixes)
+ *    Sem chave. Traz família, ordem, classe e nome comum (EN)
+ *    das 36.500+ espécies catalogadas no FishBase.
+ * ============================================================ */
+const FISHBASE_BASE = 'https://fishbase.ropensci.org';
+
+async function buscarFishBase(termo) {
+  try {
+    // "Paracheirodon innesi" -> Genus=Paracheirodon&Species=innesi
+    const partes = String(termo || '').trim().split(/\s+/);
+    if (partes.length < 2) return null;
+    const genus = partes[0];
+    const species = partes.slice(1).join(' ');
+
+    const dados = await obterTexto(
+      `${FISHBASE_BASE}/species?Genus=${encodeURIComponent(genus)}&Species=${encodeURIComponent(species)}`,
+      { json: true }
+    );
+    const linha = dados?.data?.[0];
+    if (!linha) return null;
+
+    const nomeComum = linha.FBname || '';
+    const r = {
+      provedor: 'FishBase',
+      confianca: null,
+      tipo: 'fauna',
+      nomeComum: nomeComum || 'Espécie não catalogada',
+      nomeCientifico: linha.Genus && linha.Species ? `${linha.Genus} ${linha.Species}` : termo,
+      familia: linha.Family || '—',
+      origem: '—',
+      tamanho: '—',
+      temperatura: '—',
+      ph: '—',
+      dureza: '—',
+      dieta: '—',
+      comportamento: '—',
+      aquarioMinimo: '—',
+      dificuldade: '—',
+      iluminacao: '—',
+      co2: '—',
+      crescimento: '—',
+      tipoPlanta: '—',
+      observacoes: [linha.Order, linha.Class].filter(Boolean).join(' · ')
+        ? `Classificação: ${[linha.Order, linha.Class].filter(Boolean).join(' · ')}. Dados do FishBase.`
+        : 'Dados do FishBase.',
+      foto: '',
+    };
+    return validarResultado(r) ? r : null;
+  } catch (e) {
+    console.error('[fontes] FishBase:', e.message);
+    return null;
+  }
+}
+
+/* ============================================================
+ * 7. SPECIESLINK (rede CRIA — ocorrências no Brasil)
+ *    Requer SPECIESLINK_API_KEY (gratuita em specieslink.net/aut/profile/apikeys).
+ *    Endpoint atual: specieslink.net/ws/1.0/search (GeoJSON). Com limit=0
+ *    retorna apenas numberMatched (total), sem baixar os registros.
+ * ============================================================ */
+const SPECIESLINK_BASE = 'https://specieslink.net/ws/1.0/search';
+
+async function buscarSpeciesLink(termo) {
+  try {
+    const apikey = process.env.SPECIESLINK_API_KEY;
+    if (!apikey) return null;
+    const dados = await obterTexto(
+      `${SPECIESLINK_BASE}?apikey=${encodeURIComponent(apikey)}&scientificname=${encodeURIComponent(termo)}&limit=0`,
+      { json: true }
+    );
+    const total = dados?.numberMatched || 0;
+    if (!total || total <= 0) return null;
+    const r = {
+      provedor: 'SpeciesLink',
+      confianca: null,
+      tipo: 'fauna',
+      nomeComum: 'Espécie não catalogada',
+      nomeCientifico: termo,
+      familia: '—',
+      origem: 'Brasil',
+      tamanho: '—',
+      temperatura: '—',
+      ph: '—',
+      dureza: '—',
+      dieta: '—',
+      comportamento: '—',
+      aquarioMinimo: '—',
+      dificuldade: '—',
+      iluminacao: '—',
+      co2: '—',
+      crescimento: '—',
+      tipoPlanta: '—',
+      observacoes: `${total} registro(s) em coleções científicas brasileiras (rede speciesLink).`,
+      foto: '',
+    };
+    return validarResultado(r) ? r : null;
+  } catch (e) {
+    console.error('[fontes] SpeciesLink:', e.message);
+    return null;
+  }
+}
+
+/* ============================================================
+ * 8. GBIF (Global Biodiversity Information Facility)
+ *    API pública sem chave. Traz taxonomia confirmada, nome
+ *    comum (PT), família, distribuição e foto de referência da
+ *    maior base mundial de biodiversidade.
+ * ============================================================ */
+const GBIF_BASE = 'https://api.gbif.org/v1';
+
+async function buscarGBIF(termo) {
+  try {
+    const match = await obterTexto(
+      `${GBIF_BASE}/species/match?name=${encodeURIComponent(termo)}&verbose=true`,
+      { json: true }
+    );
+    const usageKey = match?.usageKey;
+    const nomeMatch = match?.canonicalName || match?.scientificName || '';
+    if (!usageKey || !nomeMatch) return null;
+
+    const detalhe = await obterTexto(`${GBIF_BASE}/species/${usageKey}`, { json: true });
+    if (!detalhe) return null;
+
+    // Nome comum em português (melhor esforço; aceita PT-BR ou en).
+    let nomeComum = '';
+    try {
+      const vern = await obterTexto(`${GBIF_BASE}/species/${usageKey}/vernacularNames`, { json: true });
+      const nomes = vern?.results || [];
+      const pt = nomes.find((n) => (n.language || '').toLowerCase().startsWith('pt'));
+      const en = nomes.find((n) => (n.language || '').toLowerCase().startsWith('en'));
+      nomeComum = (pt || en || {})?.vernacularName || '';
+    } catch (e) {
+      /* sem nome comum */
+    }
+
+    const r = {
+      provedor: 'GBIF',
+      confianca: null,
+      tipo: 'fauna',
+      nomeComum: nomeComum || 'Espécie não catalogada',
+      nomeCientifico: detalhe.scientificName || nomeMatch,
+      familia: detalhe.family || '—',
+      origem: detalhe.kingdom === 'Plantae' ? '—' : (detalhe.class || '—'),
+      tamanho: '—',
+      temperatura: '—',
+      ph: '—',
+      dureza: '—',
+      dieta: '—',
+      comportamento: '—',
+      aquarioMinimo: '—',
+      dificuldade: '—',
+      iluminacao: '—',
+      co2: '—',
+      crescimento: '—',
+      tipoPlanta: '—',
+      observacoes: `Taxonomia validada pela base GBIF. Reino: ${detalhe.kingdom || '—'}, Classe: ${detalhe.class || '—'}.`,
+      foto: '',
+    };
+    return validarResultado(r) ? r : null;
+  } catch (e) {
+    console.error('[fontes] GBIF:', e.message);
+    return null;
+  }
+}
+
+/* ============================================================
  * Orquestração: enriquecer um resultado com as fontes externas
  * ============================================================ */
 function juntar(preenchido, novo) {
@@ -409,6 +691,31 @@ async function enriquecerComFontes(resultado) {
       if (melhor !== resultado) break;
     }
 
+    // Fontes internacionais (Trefle/iNaturalist/GBIF) e de ocorrência (SpeciesLink),
+    // usadas para preencher campos que as fontes nacionais não cobrem.
+    const ehFlora = resultado.tipo === 'flora';
+    if (resultado.nomeCientifico && !resultado.nomeCientifico.includes('—')) {
+      const extra = ehFlora
+        ? [buscarTrefle(resultado.nomeCientifico), buscarINaturalist(resultado.nomeCientifico)]
+        : [buscarFishBase(resultado.nomeCientifico), buscarINaturalist(resultado.nomeCientifico)];
+      const [trefle, inat] = await Promise.allSettled(extra);
+      if (ehFlora && trefle.value) { melhor = juntar(melhor, trefle.value); fontes.push('Trefle'); }
+      if (inat.value) { melhor = juntar(melhor, inat.value); fontes.push('iNaturalist'); }
+    }
+
+    // GBIF: taxonomia confirmada e nome comum (PT) para fauna e flora.
+    if ((!melhor.nomeCientifico || melhor.nomeCientifico.includes('—')) ||
+        (melhor.nomeComum === 'Espécie não catalogada' && (melhor.familia === '—' || !melhor.familia))) {
+      const [gbif] = await Promise.allSettled([buscarGBIF(resultado.nomeCientifico || resultado.nomeComum)]);
+      if (gbif.value) { melhor = juntar(melhor, gbif.value); fontes.push('GBIF'); }
+    }
+
+    // SpeciesLink: só quando nenhuma fonte nacional confirmou a origem.
+    if (melhor.origem === '—' || !melhor.origem) {
+      const [spl] = await Promise.allSettled([buscarSpeciesLink(resultado.nomeCientifico || resultado.nomeComum)]);
+      if (spl.value) { melhor = juntar(melhor, spl.value); fontes.push('SpeciesLink'); }
+    }
+
     if (fontes.length === 0) return resultado;
     return { ...melhor, fontes: [...new Set(fontes)] };
   } catch (e) {
@@ -431,4 +738,9 @@ module.exports = {
   buscarAquarismoPaulista,
   buscarFishipedia,
   buscarChacaraTakeyoshi,
+  buscarTrefle,
+  buscarINaturalist,
+  buscarFishBase,
+  buscarSpeciesLink,
+  buscarGBIF,
 };

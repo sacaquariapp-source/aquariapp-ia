@@ -571,11 +571,66 @@ const PROMPT_SISTEMA =
   '(6) Somente retorne tipo "invalido" se a foto não for animal/planta aquática, com campo "motivo" curto. ' +
   'Retorne "desconhecido" apenas se a foto for aquática mas sem nada identificável.';
 
+// Exemplos few-shot: pares de espécies fáceis de confundir, com a característica
+// VISUAL decisiva que diferencia cada uma. Colocados no topo do prompt final
+// para maximizar o impacto na decisão do modelo.
+const FEW_SHOT_EXAMPLES =
+  'EXEMPLOS DE DIFERENCIAÇÃO (leia com atenção — são os erros mais comuns): ' +
+  '1) Neon Innesi (Paracheirodon innesi): faixa vermelha SÓ na metade traseira do corpo. ' +
+  'Neon Cardinal (P. axelrodi): faixa vermelha no corpo INTEIRO (do olho à cauda). ' +
+  '2) Guppy macho (Poecilia reticulata): cauda GRANDE, colorida e fluida; corpo pequeno. ' +
+  'Guppy Endler (P. wingei): menor, com blocos de cor metálica, cauda curta. ' +
+  'Molly (P. sphenops): corpo mais alto, nadadeira dorsal maior, cauda sem espada. ' +
+  'Espada (X. hellerii): prolongamento em ESPADA na cauda. ' +
+  '3) Acará-bandeira (Pterophyllum scalare): corpo ALTO em forma de disco, listras verticais pretas, nadadeiras longas. ' +
+  'Acará-disco (Symphysodon): corpo arredondado, sem listras verticais marcadas. ' +
+  '4) Haplochromis obliquidens (Lago Victoria, ÁGUA DOCE): barras OBLÍQUAS (diagonais) laranja/escuras. ' +
+  'Maylandia zebra (Malawi): listras VERTICAIS pretas e brancas. NUNCA é goatfish/serranus (marinhos). ' +
+  '5) Betta (B. splendens): barbatanas longas em véu, corpo compacto, vem do Sudeste Asiático. ' +
+  'Gourami/Colisa (Trichogaster): barbatanas peitorais em forma de antena fina. ' +
+  '6) Coridora (Corydoras): peixe de fundo com bigodes, corpo blindado por placas. ' +
+  'Panda: mancha preta ao redor do olho. Sterbai: pintas claras no fundo escuro. Bronze: cor uniforme. ' +
+  '7) Green Terror (Andinoacara rivulatus, AMERICANO): corpo esverdeado com manchas, barbatanas longas e pontiagudas. ' +
+  'Ciclídeos do Malawi (africanos): cores vivas uniformes, corpo menor. ' +
+  '8) Ciclídeo Papagaio/Blood Parrot (híbrido): corpo em BALÃO (pão), boca pequena sempre aberta em "o". ' +
+  '9) Oscar (Astronotus ocellatus): manchas OCELADAS (com olho) na base da cauda. ' +
+  '10) Tetra Foguinho (Hyphessobrycon flammeus): corpo avermelhado/laranja. ' +
+  'Tetra Amanda (H. amandae): corpo pequeno laranja-claro, cauda sem marcação forte. ' +
+  '11) INVERTEBRADOS de água doce (ornamentais de aquário): camarões (Red Cherry Neocaridina davidi vermelho; Amano Caridina multidentata cinza com pintas; Ghost Palaemonetes translúcido), ' +
+  'caramujos (Ampulária/Pomacea concha grande e redonda; Ramshorn Planorbella concha em espiral plana avermelhada; Neritina concha com listras/marcas, não se reproduz em água doce), ' +
+  'lagostas/caranguejos de água doce (Procambarus clarkii vermelho). ' +
+  '12) ANFÍBIOS de água doce (terrário/aquaterrário): Axolote (Ambystoma mexicanum) — salamandra com brânquias externas plumosas na cabeça, corpo liso, cauda longa; ' +
+  'rãs e pererecas aquáticas. ' +
+  '13) RÉPTEIS de água doce (terrário/tartarugário): Tigre d\'água (Staurotypus/Dermatemys ou a tartaruga aquática comum) — casco rígido, cabeça retrátil, patas palmadas; ' +
+  'tartarugas de água doce (Trachemys scripta), quelônios. NUNCA é um peixe. ' +
+  '14) CICLÍDEOS DO MALAWI entre si (todos africanos, corpo ovalado): Labidochromis caeruleus = AMARELO uniforme com faixa preta na dorsal. ' +
+  'Pseudotropheus zebra (Maylandia) = listras VERTICAIS azuis/pretas. Demasoni = listras verticais azul e preto MUITO finas. ' +
+  'Melanochromis auratus = macho listrado amarelo/preto, fêmea amarela. Aulonocara (Peacock) = cor UNIFORME brilhante (vermelho/azul/amarelo) SEM listras. ' +
+  '15) Barbos: Sumatra (Pethia tetrazona) = 4 listras VERTICAIS pretas em corpo alaranjado/prateado. ' +
+  'Cereja (Puntius titteya) = macho VERMELHO/cereja uniforme sem listras. Rosado (Pethia conchonius) = prateado/rosado com mancha preta no pedúnculo. ' +
+  '16) Cascudos/limpa-vidros: Otocinclus = pequeno (~4cm), delgado, mancha escura horizontal, come algas do vidro. ' +
+  'Ancistrus = tem RABO (tentáculos) no focinho, corpo mais robusto. Hypostomus/Pleco = grande (20-30cm), corpo com placas. ' +
+  '17) Tetras escuros: Tetra Preto/Fantasma Negro (Gymnocorymbus ternetzi) = corpo alto, 2 listras verticais escuras, nadadeiras pretas. ' +
+  'Tetra Fantasma Vermelho (H. sweglesi) = vermelho, sem listras verticais. ' +
+  '18) Gouramis: Azul (Trichopodus trichopterus) = azul-acinzentado com pintas, barbatana peitoral em antena. ' +
+  'Pérola (T. leerii) = manchas claras tipo pérola no corpo escuro. Mel (Trichogaster chuna) = laranja/mel. ' +
+  '19) Carpas/Kinguios: Carassius auratus (dourado comum) = corpo alongado, cauda bifurcada simples. ' +
+  'Kinguio Oranda = capuz (wén) na cabeça + cauda longa. Ranchu = SEM barbatana dorsal, corpo arredondado. ' +
+  'Kinguio Telescópio = OLHOS salientes em telescópio. Koi (Cyprinus carpio) = tem BARBILHÕES no focinho (o dourado não tem). ' +
+  '20) ALGAS por foto: Filamentosa = fios verdes longos (como cabelo). Peteca/BBA = tufos PRETOS/escuros rígidos nas bordas. ' +
+  'Marrom = poeira marrom no vidro/plantas (aquário novo). Água verde = água turva esverdeada inteira. ' +
+  'Green spot = pontos verdes rígidos no vidro. ' +
+  'REGRAS DE ESCOPO: este app identifica FAUNA AQUÁTICA DE ÁGUA DOCE ornamental de aquários, lagos e terrários — ' +
+  'peixes, invertebrados (camarões, caramujos, lagostas, caranguejos), anfíbios (axolotes, rãs) e repteis aquáticos (tigre d\'água, tartarugas). ' +
+  'NUNCA identifique animais TERRESTRES (gatos, cachorros, pássaros) nem MARINHOS (peixes de recife, coral, anêmonas marinhas).';
+
 // Prompt final de identificação: junta o PROMPT_SISTEMA com a lista de
 // espécies conhecidas do catálogo do app (para a IA escolher dentro dela).
 function montarPromptSistema() {
   const lista = obterListaEspeciesPrompt();
   return (
+    FEW_SHOT_EXAMPLES +
+    ' ' +
     PROMPT_SISTEMA +
     ' ' +
     'CATÁLOGO DISPONÍVEL NO APP (escolha PREFERENCIALMENTE uma espécie desta lista quando a foto corresponder; ' +
@@ -728,7 +783,7 @@ async function comFoto(r) {
   return enriquecido;
 }
 
-async function viaOpenAI(imagem) {
+async function viaOpenAI(imagem, sistemaCustom) {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     signal: AbortSignal.timeout(AI_TIMEOUT_MS),
@@ -743,7 +798,7 @@ async function viaOpenAI(imagem) {
       messages: [
         {
           role: 'system',
-          content: montarPromptSistema(),
+          content: sistemaCustom || montarPromptSistema(),
         },
         {
           role: 'user',
@@ -764,6 +819,104 @@ async function viaOpenAI(imagem) {
   if (dados.tipo === 'invalido') throw new FotoInvalidaError(dados.motivo);
   if (dados.tipo === 'desconhecido') throw new Error('OpenAI: não reconheceu a imagem');
   return normalizarResultado({ provedor: 'OpenAI', ...dados });
+}
+
+// Catálogo de descrições VISUAIS das espécies brasileiras mais comuns
+// (gerado offline: dataset/fotos + scripts/gerar-descricoes-visuais.js).
+let catalogoVisualCache = null;
+function lerCatalogoVisual() {
+  if (catalogoVisualCache) return catalogoVisualCache;
+  try {
+    const raw = fs.readFileSync(path.join(CATALOGOS_DIR, 'faunaBrasileiraVisual.json'), 'utf8');
+    catalogoVisualCache = JSON.parse(raw);
+    return catalogoVisualCache;
+  } catch (e) {
+    return { especies: [] };
+  }
+}
+
+// Provider especializado em FAUNA brasileira de água doce. Usa o catálogo de
+// descrições visuais (faunaBrasileiraVisual.json) para montar um prompt focado
+// nas espécies mais comuns, com detalhes morfológicos e diferenciação.
+// Tem o MAIOR peso do ensemble (3.0) por ser o conhecimento mais relevante.
+async function viaFaunaBrasileira(base64, mime) {
+  const cat = lerCatalogoVisual();
+  const todas = cat.especies || [];
+  // Prioriza as não-peixes (invertebrados, anfíbios, répteis — id > 900) para
+  // garantir cobertura, e completa com as peixes mais comuns.
+  const extras = todas.filter((e) => e.id > 900);
+  const peixes = todas.filter((e) => e.id <= 900).slice(0, 55);
+  const especies = [...extras, ...peixes];
+
+  if (especies.length === 0) {
+    console.warn('[FaunaBrasileira] catálogo visual vazio — pulando.');
+    return null;
+  }
+
+  const blocos = especies
+    .map((e) => {
+      const difs = Object.entries(e.diferenciacaoDe || {})
+        .map(([sp, desc]) => `  ≠ ${sp}: ${desc}`)
+        .join('\n');
+      const chaves = (e.caracteristicasChave || []).join('; ');
+      return `${e.nomeComum} (${e.nomeCientifico})${e.variedade ? ` — variedade ${e.variedade}` : ''}.\n` +
+        `Descrição visual: ${e.descricaoVisual || ''}\n` +
+        `Tamanho: ${e.tamanhoCm || '?'} cm. Cores: ${e.coresPredominantes || '?'}.\n` +
+        (chaves ? `Chaves: ${chaves}.\n` : '') +
+        (difs ? `Diferenciação:\n${difs}\n` : '');
+    })
+    .join('\n\n');
+
+  const sistemaFaunaBR =
+    'Você é especialista em peixes de aquário de ÁGUA DOCE, com foco em espécies populares no Brasil. ' +
+    'Compare a foto com as descrições visuais abaixo e identifique a espécie MAIS provável. ' +
+    'Use o formato, tamanho, cores, padrões e diferenciações descritos para decidir. ' +
+    'Se a foto não corresponder bem a nenhuma, retorne a mais próxima com confiança < 50 e explique em observacoes. ' +
+    'NUNCA identifique peixes marinhos. Retorne JSON no formato: ' +
+    '{"tipo":"fauna","confianca":0-100,"nomeComum":"nome popular","nomeCientifico":"nome científico","familia":"família",' +
+    '"tamanho":"ex: 4-5 cm","temperatura":"ex: 23 - 27 °C","ph":"ex: 6 - 7","dureza":"ex: 5 - 12 °dH",' +
+    '"dieta":"tipo de alimentação","comportamento":"comportamento","aquarioMinimo":"ex: 40 L","dificuldade":"fácil/médio/avançado",' +
+    '"observacoes":"explicação da identificação e alternativas se houver dúvida"}. ' +
+    'CATÁLOGO DE REFERÊNCIA:\n' + blocos;
+
+  // Detector de erro de QUOTA/RATE LIMIT (429) ou serviço indisponível (503).
+  // Esses erros indicam que o provedor está temporariamente fora — vale tentar o
+  // fallback pago (OpenAI). Erros de conteúdo (foto inválida) NÃO fazem fallback.
+  function isQuotaError(msg) {
+    return /429|503|quota|rate.?limit|RESOURCE_EXHAUSTED|UNAVAILABLE/i.test(String(msg || ''));
+  }
+
+  // Tenta Gemini (grátis) primeiro; se exceder a cota, usa OpenAI (pago).
+  let resultado = null;
+  let geminiErro = '';
+  try {
+    resultado = await viaGemini(base64, mime, '', sistemaFaunaBR);
+  } catch (e) {
+    geminiErro = e.message || String(e);
+    console.warn('[viaFaunaBrasileira] Gemini falhou:', geminiErro);
+  }
+
+  // Se o Gemini não respondeu e há quota erro (ou retorno vazio), usa OpenAI.
+  const precisaFallback =
+    !resultado || !resultado.nomeCientifico || resultado.nomeCientifico === 'Não identificado' ||
+    isQuotaError(geminiErro);
+
+  if (precisaFallback && process.env.OPENAI_API_KEY) {
+    try {
+      const dataUrl = `data:${mime || 'image/jpeg'};base64,${base64}`;
+      resultado = await viaOpenAI(dataUrl, sistemaFaunaBR);
+      if (resultado && resultado.nomeCientifico && resultado.nomeCientifico !== 'Não identificado') {
+        console.log('[viaFaunaBrasileira] usado OpenAI (fallback do Gemini).');
+      }
+    } catch (e2) {
+      console.warn('[viaFaunaBrasileira] OpenAI fallback falhou:', e2.message);
+    }
+  }
+
+  if (resultado && resultado.nomeCientifico && resultado.nomeCientifico !== 'Não identificado') {
+    resultado.provedor = 'FaunaBrasileira';
+  }
+  return resultado || null;
 }
 
 async function viaGemini(base64, mime, textoExtra, sistemaPrompt) {
@@ -1104,6 +1257,7 @@ app.post('/identify', async (req, res) => {
   // final é feita pelo ensemble ponderado, então a ordem de chamada não importa
   // (a pré-classificação Gemini foi removida por ser uma chamada redundante).
   const provedores = [
+    ['FaunaBrasileira', () => viaFaunaBrasileira(base64, prefixo), () => true],
     ['GoogleVision', () => viaGoogleVision(base64, prefixo), () => !!process.env.GOOGLE_VISION_API_KEY],
     ['Fishial', () => viaFishial(base64, prefixo), () => !!(process.env.FISHIAL_CLIENT_ID && process.env.FISHIAL_CLIENT_SECRET)],
     ['PlantNet', () => viaPlantNet(base64, prefixo), () => !!process.env.PLANTNET_API_KEY],
@@ -1162,6 +1316,7 @@ app.post('/identify', async (req, res) => {
     // genéricas, mas a concordância entre provedores (mesma espécie canônica)
     // e a canonicalização no catálogo entram na decisão.
     const PESOS = {
+      FaunaBrasileira: 3.0,
       GoogleVision: 2.5,
       Fishial: 2.0,
       PlantNet: 2.5,
@@ -1231,9 +1386,36 @@ app.post('/identify', async (req, res) => {
       if ((Number(visaoTop.r.confianca) || 0) >= 60) melhor = visaoTop;
     }
 
+    // Proteção inversa: o FaunaBrasileira é especialista em FAUNA. Se ele venceu
+    // (peso 3.0) mas PlantNet/GoogleVision apontaram FLORA com confiança alta,
+    // prioriza a flora (evita "planta → peixe"). Também reduz o impacto do
+    // FaunaBrasileira quando a confiança dele é baixa (< 50) e há alternativa.
+    const flora = resultados.filter(
+      (x) => (x.nome === 'PlantNet' || x.nome === 'GoogleVision') && x.r && x.r.tipo === 'flora'
+    );
+    if (
+      melhor.nome === 'FaunaBrasileira' &&
+      melhor.r && melhor.r.tipo === 'fauna' && flora.length > 0
+    ) {
+      const floraTop = flora.sort((a, b) => (Number(b.r.confianca) || 0) - (Number(a.r.confianca) || 0))[0];
+      const confFauna = Number(melhor.r.confianca) || 0;
+      const confFlora = Number(floraTop.r.confianca) || 0;
+      if (confFlora >= 70 && confFlora > confFauna) {
+        melhor = floraTop;
+      } else if (confFauna < 50 && confFlora >= 60) {
+        melhor = floraTop;
+      }
+    }
+
     // REFINO com Gemini quando há dúvida (discordância ou confiança baixa): a
     // imagem + a lista curta de candidatos decide a espécie final (fauna).
+    // OTIMIZAÇÃO DE CHAMADAS: se o FaunaBrasileira (especialista brasileiro,
+    // peso 3.0) deu confiança >= 80, o refino é desnecessário — evita 1 chamada
+    // extra de IA por foto (aumenta a capacidade da quota gratuita).
     if (process.env.GEMINI_API_KEY && melhor.r && melhor.r.tipo === 'fauna') {
+      const confiancaMelhor = Number(melhor.r.confianca) || 0;
+      const faunabrConfiavel =
+        melhor.nome === 'FaunaBrasileira' && confiancaMelhor >= 80;
       const gruposTop = [...grupos.entries()]
         .sort((a, b) => pontuaGrupo(b[1]) - pontuaGrupo(a[1]))
         .slice(0, 3);
@@ -1248,10 +1430,11 @@ app.post('/identify', async (req, res) => {
           if (!vistosC.has(chave)) { vistosC.add(chave); nomesCandidatos.push(`${nc} (${ci})`); }
         }
       }
-      const confiancaMelhor = Number(melhor.r.confianca) || 0;
       // Dispara apenas em dúvida real: top-2 grupos próximos OU confiança baixa.
+      // Com FaunaBrasileira confiável (>=80), pula o refino (economia de 1 chamada).
       const precisaRefino =
-        (divergencia && segundoMelhorScore >= melhorScore - 15) || confiancaMelhor < 55;
+        !faunabrConfiavel &&
+        ((divergencia && segundoMelhorScore >= melhorScore - 15) || confiancaMelhor < 55);
       if (nomesCandidatos.length >= 2 && precisaRefino) {
         try {
           const refino = await viaGeminiRefino(base64, prefixo, nomesCandidatos.join('; '));
@@ -1281,14 +1464,27 @@ app.post('/identify', async (req, res) => {
       melhor.r = aplicarFichaCanonica(melhor.r, resolverNoCatalogo(melhor.r));
     }
     const enr = await comFoto(melhor.r);
-    // Une as opções dos demais provedores quando houver divergência.
+    // Une as opções dos demais provedores quando houver divergência, com score.
     const opcoesExtras = resultados
       .filter((x) => x !== melhor && x.r && x.r.nomeComum && x.nome !== 'SpeciesLink')
-      .map((x) => ({ provedor: x.nome, ...x.r }))
+      .map((x) => {
+        const peso = pesoDe(x);
+        const c = Number(x.r.confianca) || 0;
+        return { provedor: x.nome, score: Math.round(c * peso), ...x.r };
+      })
       .filter((o) => o.nomeComum && o.nomeComum !== enr.nomeComum);
-    if (opcoesExtras.length > 0) {
-      enr.opcoes = [...(enr.opcoes || []), ...opcoesExtras];
+    // Ordena por score (melhor primeiro) e limita a 3 alternativas.
+    const alternativas = opcoesExtras
+      .sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0))
+      .slice(0, 3);
+    if (alternativas.length > 0) {
+      enr.opcoes = [...(enr.opcoes || []), ...alternativas];
+      enr.alternativas = alternativas;
     }
+    // Classificação da confiança geral da identificação.
+    const confPrincipal = Number(enr.confianca) || 0;
+    enr.confiancaGeral =
+      confPrincipal >= 80 ? 'alta' : confPrincipal >= 60 ? 'media' : 'baixa';
     enr.provedor = melhor.nome;
     if (hashCache) {
       cacheStore.salvarResultado(hashCache, {
@@ -1314,6 +1510,8 @@ app.post('/identify', async (req, res) => {
         observacoes: enr.observacoes,
         foto: enr.foto,
         opcoes: enr.opcoes || [],
+        alternativas: enr.alternativas || [],
+        confiancaGeral: enr.confiancaGeral || null,
       });
     }
     return res.json(enr);
@@ -4574,4 +4772,4 @@ app.listen(PORT, () => {
     console.log(`  Usuários:   /admin-usuarios`);
   });
 }
-module.exports = { app, viaGemini, viaPlantNet, viaOpenAI, viaGoogleVision, classificarTipoGemini, validarFotoGemini, validarFotoOpenAI, filtrarCronogramaSeguro, detectarFaunaSensivel };
+module.exports = { app, viaGemini, viaPlantNet, viaOpenAI, viaGoogleVision, viaFaunaBrasileira, classificarTipoGemini, validarFotoGemini, validarFotoOpenAI, filtrarCronogramaSeguro, detectarFaunaSensivel };

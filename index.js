@@ -618,13 +618,25 @@ const FEW_SHOT_EXAMPLES =
   '19) Carpas/Kinguios: Carassius auratus (dourado comum) = corpo alongado, cauda bifurcada simples. ' +
   'Kinguio Oranda = capuz (wén) na cabeça + cauda longa. Ranchu = SEM barbatana dorsal, corpo arredondado. ' +
   'Kinguio Telescópio = OLHOS salientes em telescópio. Koi (Cyprinus carpio) = tem BARBILHÕES no focinho (o dourado não tem). ' +
-  '20) ALGAS por foto: Filamentosa = fios verdes longos (como cabelo). Peteca/BBA = tufos PRETOS/escuros rígidos nas bordas. ' +
-  'Marrom = poeira marrom no vidro/plantas (aquário novo). Água verde = água turva esverdeada inteira. ' +
-  'Green spot = pontos verdes rígidos no vidro. ' +
+  '20) ALGAS por foto — PETECA é a mais comum em aquários plantados; em dúvida entre peteca e filamentosa, prefira PETECA. ' +
+  'Peteca/BBA = TUFOS pretos/cinza-escuros, DENSOS e RÍGIDOS, grudados nas BORDAS de folhas, troncos e saídas de filtro (não saem esfregando). ' +
+  'Filamentosa = FIOS VERDES longos, finos e MACIOS como cabelo, formando teias (verdes, nunca pretos). ' +
+  'Marrom = POEIRA marrom fina que sai fácil com o dedo (aquário novo/ciclagem). ' +
+  'Green Dust = poeira verde difusa no vidro (macia). Green Spot = PONTOS verdes DUROS que só saem com lâmina. ' +
+  'Cianobactéria = película verde-azulada VISCOSA com CHEIRO de mofo (não é alga verdadeira). ' +
+  'Água verde = água inteira turva esverdeada. ' +
   '21) Tetra Rosa (Hyphessobrycon bentosi) vs Rosado (H. rosaceus) vs Serpae (H. eques): Rosa = corpo ALTO em disco, rosa-avermelhado uniforme, dorsal alta com mancha escura na base. ' +
   'Rosado = corpo mais alongado, faixa prateada discreta. Serpae = mancha preta em VÍRGULA atrás da guelra. ' +
   '22) Polypterus (PEIXE primitivo africano) vs Axolote (ANFÍBIO mexicano): Polypterus tem corpo cilíndrico com ESCAMAS em losango, dorsal em ESPINHOS isolados, nadadeiras peitorais em leque, SEM patas, SEM brânquias externas. ' +
   'Axolote tem BRÂNQUIAS externas plumosas na cabeça, 4 PATAS, corpo liso SEM escamas. NUNCA confunda: peixe com escamas ≠ anfíbio com patas. ' +
+  '23) Barbo Ouro (Pethia gelius, 3-4 cm) vs Kinguio (Carassius auratus, 15-30 cm): Barbo Ouro é MINÚSCULO, dourado uniforme, corpo alongado de ciprinídeo, nada em cardume. ' +
+  'Kinguio é 5-10x MAIOR, corpo alto/arredondado, cauda dupla. Um peixe pequeno dourado é SEMPRE barbo, NUNCA kinguio — use o TAMANHO como critério decisivo. ' +
+  '24) NOMES POPULARES — Colisa = Gourami Anão: Trichogaster lalius é chamado de COLISA no Brasil e de DWARF GOURAMI / GOURAMI ANÃO internacionalmente. ' +
+  'São o MESMO peixe (variedades azul, vermelha/flame, neon, arco-íris). Ao identificar, cite AMBOS os nomes para não parecer erro. ' +
+  '25) Platy Mickey (Xiphophorus maculatus variedade Mickey Mouse) vs Molinésia (Poecilia sphenops): Platy Mickey tem a MARCA de 3 manchas escuras na base da cauda (rosto do Mickey), corpo compacto 4-6 cm. ' +
+  'Molinésia é MAIOR (8-12 cm), corpo alongado, dorsal maior, SEM marca do Mickey. Com marca do Mickey = Platy, sem dúvida. ' +
+  '26) Tetra Fortuna (Moenkhausia costae) vs Limão (Hyphessobrycon pulchripinnis): Fortuna = PRATEADO com brilho metálico e faixa horizontal escura discreta, 5-7 cm. ' +
+  'Limão = AMARELO-limão vivo por todo o corpo. Prateado = Fortuna; amarelo = Limão. ' +
   'REGRAS DE ESCOPO: este app identifica FAUNA AQUÁTICA DE ÁGUA DOCE ornamental de aquários, lagos e terrários — ' +
   'peixes, invertebrados (camarões, caramujos, lagostas, caranguejos), anfíbios (axolotes, rãs) e repteis aquáticos (tigre d\'água, tartarugas). ' +
   'NUNCA identifique animais TERRESTRES (gatos, cachorros, pássaros) nem MARINHOS (peixes de recife, coral, anêmonas marinhas).';
@@ -2550,10 +2562,12 @@ const CATALOGO_DOENCAS = [
 ];
 
 const CATALOGO_ALGAS = [
-  { nome: 'Alga Marrom (Diatomáceas)', sinonimos: 'diatomácea, poeira marrom, brown algae', aspecto: 'poeira marrom nas superfícies, comum na ciclagem', causa: 'silicato e baixa luz', tratamento: 'desaparece com a estabilização; aumentar luz e adicionar otocinclus/caramujos', dicas: 'sifonar e usar água com baixo silicato' },
-  { nome: 'Alga Peteca / Barba Negra (BBA)', sinonimos: 'peteca, barba negra, black beard algae', aspecto: 'tufos escuros rígidos nas bordas de folhas e troncos', causa: 'CO2 instável, matéria orgânica, circulação baixa', tratamento: 'carbono líquido (glutaraldeído) ou água oxigenada 10 vol com seringa, filtros desligados 10 min', dicas: 'comedor de algas siamês ajuda; estabilizar CO2' },
-  { nome: 'Algas Verdes Filamentosas', sinonimos: 'hair algae, fios verdes', aspecto: 'fios verdes enroscados em plantas/decoração', causa: 'excesso de ferro/nitrato e luz longa', tratamento: 'remoção manual com escova, luz 6-7h/dia e TPAs', dicas: 'camarões amano comem essa alga' },
-  { nome: 'Cianobactéria (Alga Verde-Azulada)', sinonimos: 'cianobactéria, BGA, gosma, slime', aspecto: 'película verde-azulada viscosa com cheiro de mofo', causa: 'pouca circulação e N:P desequilibrado', tratamento: 'sifonar, apagão total 3-4 dias; eritromicina em casos severos', dicas: 'melhorar circulação e reequilibrar nitrato/fosfato' },
+  { nome: 'Alga Marrom (Diatomáceas)', sinonimos: 'diatomácea, poeira marrom, brown algae', aspecto: 'Camada poeirenta marrom, fina e MUITO FÁCIL de limpar (sai com o dedo). Cobre vidros, substrato e plantas, comum em montagens novas (ciclagem).', causa: 'Excesso de silicatos na água e FALTA de iluminação (típico do início do aquário).', tratamento: 'Costuma sumir sozinha quando a biologia estabiliza. Sifonar o fundo; aumentar um pouco a luz.', dicas: 'Limpa-vidros (Otocinclus) e caramujos (Neritina, Ampulária) devoram rapidamente. Usar água com baixo silicato.' },
+  { nome: 'Alga Peteca / Barba Negra (BBA)', sinonimos: 'peteca, barba negra, black beard algae, black brush algae', aspecto: 'TUFOS PRETOS ou cinza-escuros, DENSOS e RÍGIDOS, muito bem fixados (não saem esfregando). Aparecem nas BORDAS de folhas de crescimento lento, saídas de filtro, troncos e rochas. É a alga MAIS COMUM em aquários plantados — em caso de dúvida entre peteca e filamentosa, prefira peteca.', causa: 'FLUTUAÇÃO de CO2 (principal) e excesso de circulação/matéria orgânica.', tratamento: 'Carbono líquido (glutaraldeído) aplicado direto nos focos com seringa, ou água oxigenada 10 volumes, com filtros desligados por 10 minutos. NÃO escovar dentro do aquário (espalha esporos).', dicas: 'Comedor de Alga Siamês (Crossocheilus oblongus) come BBA. Estabilizar o CO2 é a prevenção definitiva.' },
+  { nome: 'Algas Verdes Filamentosas', sinonimos: 'hair algae, fios verdes, filamentosa', aspecto: 'FIOS VERDES longos, finos, MACIOS (como cabelo), que formam teias entre plantas de crescimento rápido e musgos. Diferente da peteca: é VERDE e macia, NÃO preta e rígida.', causa: 'Excesso de iluminação e excesso de Ferro (Fe) na água.', tratamento: 'Remoção manual enrolando com escova de dentes; reduzir luz para 6-7h/dia; TPAs frequentes.', dicas: 'Molinésias, Camarões Amano e Red Cherry comem filamentosa.' },
+  { nome: 'Green Dust (GDA / Poeira Verde)', sinonimos: 'green dust algae, GDA, poeira verde, névoa verde', aspecto: 'Camada de POEIRA VERDE fina como névoa biológica, cobre VIDROS e superfícies plásticas. Diferente do Green Spot: é poeira difusa (não pontos duros).', causa: 'Desequilíbrio entre Nitrato e Fosfato; comum em aquários novos.', tratamento: 'DEIXAR o ciclo de vida terminar (3-4 semanas SEM raspar — raspar reinicia o ciclo).', dicas: 'Caramujos Neritina ajudam. Não confundir com Green Spot (pontos duros).' },
+  { nome: 'Green Spot (GSA / Pontos Verdes)', sinonimos: 'green spot algae, GSA, pontos verdes', aspecto: 'Pequenos PONTOS VERDES redondos e MUITO DUROS (não saem esfregando com o dedo, precisa de lâmina). No vidro e em folhas duras como Anúbias.', causa: 'FALTA de Fosfato (PO4) na água ou excesso de luz.', tratamento: 'Remoção mecânica com raspador/lâmina; ajustar fertilização com Fosfato.', dicas: 'Cascudos e Neritinas ajudam. Diferente do Green Dust (poeira macia).' },
+  { nome: 'Cianobactéria (Alga Verde-Azulada)', sinonimos: 'cianobactéria, BGA, gosma, slime', aspecto: 'PELÍCULA verde-azulada VISCOSA e gosmenta, com CHEIRO FORTE de mofo/lodo. Cobre o substrato (junto ao vidro) e as plantas. NÃO é alga verdadeira (é bactéria).', causa: 'Baixa circulação de água e níveis ZERADOS de Nitrato (NO3).', tratamento: 'Sifonar a película; apagão total de 3 dias (sem luz, com oxigenação); em casos severos, antibiótico Eritromicina ou removedor específico (ex.: Ciano Clean).', dicas: 'Melhorar circulação e reequilibrar nitrato/fosfato. Cheiro de mofo confirma o diagnóstico.' },
 ];
 
 const CATALOGO_MICRO = [
@@ -3304,6 +3318,10 @@ const VISION_STOPWORDS = new Set([
   'criança', 'crianca', 'child', 'menino', 'menina', 'boy', 'girl', 'table', 'mesa',
   'room', 'sala', 'salao', 'couch', 'sofa', 'sofa', 'toy', 'brinquedo', 'statue',
   'estatua', 'sculpture', 'escultura', 'paint', 'tinta', 'drawing', 'desenho',
+  'fin', 'fins', 'tail', 'tails', 'eye', 'eyes', 'scale', 'scales', 'gill', 'gills',
+  'mouth', 'mouths', 'body', 'corpo', 'nadadeira', 'nadadeiras', 'barbatana', 'barbatanas',
+  'cauda', 'caudas', 'olho', 'olhos', 'escama', 'escamas', 'branquia', 'branquias',
+  'guelra', 'guelras', 'boca', 'bocas', 'dorsal', 'aleta', 'aletas', 'finlet',
 ]);
 
 const VISION_GENERICO = /(fish|peixe|plant|planta|aquarium|aquário|aquario|pet|animal|biology|biologia|underwater|submerso|aquatic|aquático|aquatico|água|agua|water|natureza|nature|imagem|image|photo|foto|life|vida|vertebrate|invertebrate|organism|organismo|fauna|flora)$/i;
@@ -3408,23 +3426,53 @@ async function viaGoogleVision(base64, mime) {
     if (nomeCientifico) break;
   }
 
+  // Páginas com imagens visualmente similares: os títulos dessas páginas
+  // costumam conter o nome da espécie (é o sinal mais parecido com o Google
+  // Lens — "fotos como esta são chamadas de X na web"). Extraímos binômios
+  // e nomes populares desses títulos como candidatos extras.
+  const paginasSimilares = (web.pagesWithMatchingImages || [])
+    .map((p) => String(p.pageTitle || ''))
+    .filter((t) => t.length >= 4)
+    .slice(0, 10);
+  const candidatosPaginas = [];
+  for (const titulo of paginasSimilares) {
+    // Binômio no título (ex.: "Poecilia reticulata - Wikipedia")
+    let m;
+    const copiaB = new RegExp(binomial.source, 'g');
+    while ((m = copiaB.exec(titulo))) {
+      const candidato = `${m[1]} ${m[2]}`;
+      const chave = candidato.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (VISION_STOPWORDS.has(chave) || VISION_GENERICO.test(candidato)) continue;
+      if (/(ltd|inc|company|s\.a|import|export|produtos|aquario|aquarium|tropical|world|fish)$/i.test(candidato)) continue;
+      candidatosPaginas.push({ texto: candidato, score: 75 });
+    }
+    // Nome popular no título antes de separadores comuns (" - ", " | ", " – ").
+    // (Teste binomial inline porque ehBinomial só é definido abaixo nesta função.)
+    const antesSep = titulo.split(/\s[-–|]\s/)[0].trim();
+    if (antesSep.length >= 4 && antesSep.length <= 60 && !/^[A-ZÀ-Ü][a-zà-ü]+\s+[a-zà-ü]+$/.test(antesSep)) {
+      candidatosPaginas.push({ texto: antesSep, score: 65 });
+    }
+  }
+
   // Melhor nome popular: candidatos específicos, com maior score. Preferimos o
   // que NÃO é binomial (ex.: "Anubias", "Guppy") sobre o nome científico como
   // nome comum (ex.: "Anubias barteri" vira o nomeCientifico, não o popular).
+  // O bestGuess (palpite direto da web = sinal tipo Lens) tem prioridade máxima.
   const candidatos = [
+    ...(bestGuess ? [{ texto: bestGuess, score: 95 }] : []),
+    ...candidatosPaginas,
     ...entidades.map((e) => ({ texto: e.texto, score: e.score })),
     ...labels.map((l) => ({ texto: l.texto, score: l.score })),
-    ...(bestGuess ? [{ texto: bestGuess, score: 90 }] : []),
   ];
   const ehBinomial = (t) => /^[A-ZÀ-Ü][a-zà-ü]+\s+[a-zà-ü]+$/.test(t.trim());
   const especies = candidatos.filter((c) => visaoNomeEhEspecie(c.texto)).sort((a, b) => b.score - a.score);
   const naoBinomial = especies.filter((c) => !ehBinomial(c.texto));
   const melhorNome = naoBinomial[0] || especies[0] || null;
-  const nomeComum = (melhorNome && melhorNome.texto) || labels[0]?.texto || 'Espécie identificada';
-  const confianca = Math.min(
-    100,
-    (melhorNome && melhorNome.score) || Math.round((labels[0]?.score || 0) * 1)
-  );
+  // Se só há rótulos genéricos/partes do corpo (ex.: "fins", "tail") e nenhum
+  // nome de espécie, descarta o provider em vez de devolver ficha vazia.
+  if (!melhorNome) throw new Error('Google Vision: nenhum nome de espécie identificado (só rótulos genéricos)');
+  const nomeComum = melhorNome.texto;
+  const confianca = Math.min(100, melhorNome.score || 0);
 
   if (!tipo && labels.length === 0) throw new Error('Google Vision: nenhum rótulo identificado');
 

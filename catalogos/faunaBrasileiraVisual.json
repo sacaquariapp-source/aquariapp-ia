@@ -743,15 +743,18 @@
       "nomeComum": "Barbo Ouro",
       "nomeCientifico": "Pethia gelius",
       "variedade": "",
-      "descricaoVisual": "O Barbo Ouro apresenta um corpo alongado e ligeiramente comprimido, com uma silhueta elegante. Suas cores variam entre dourado e prateado, com uma faixa escura que se estende ao longo do corpo, geralmente visível na região do dorso.",
+      "descricaoVisual": "Barbo Ouro (Pethia gelius) é um PEIXE PEQUENO de 3-4 cm, corpo alongado e ligeiramente comprimido, dourado/amarelo uniforme e brilhante, sem manchas grandes. Nada em cardume na coluna dágua. É um BARBO (ciprinídeo pequeno), NUNCA um kinguio: kinguio (Carassius auratus) é MUITO maior (15-30 cm), corpo alto e arredondado, cauda dupla — impossível confundir pelo tamanho em foto com escala.",
       "caracteristicasChave": [
-        "Corpo alongado e comprimido",
-        "Faixa escura ao longo do corpo",
-        "Nadadeiras amarelas"
+        "pequeno 3-4 cm",
+        "dourado uniforme brilhante",
+        "corpo alongado de barbo",
+        "nada em cardume"
       ],
       "diferenciacaoDe": {
         "Barbo de Cauda Vermelha": "O Barbo de Cauda Vermelha possui uma coloração mais intensa nas nadadeiras e uma cauda vermelha distinta, enquanto o Barbo Ouro tem nadadeiras amarelas e uma coloração mais suave.",
-        "Barbo de Ponto Preto": "O Barbo de Ponto Preto apresenta manchas pretas mais pronunciadas no corpo, enquanto o Barbo Ouro tem uma faixa escura contínua."
+        "Barbo de Ponto Preto": "O Barbo de Ponto Preto apresenta manchas pretas mais pronunciadas no corpo, enquanto o Barbo Ouro tem uma faixa escura contínua.",
+        "Kinguio / Goldfish (Carassius auratus)": "Kinguio é 5-10x MAIOR (15-30 cm), corpo alto/arredondado, cauda dupla. Barbo Ouro cabe na ponta do dedo. Se o peixe é pequeno e dourado, é barbo, nunca kinguio.",
+        "Barbo Rosado (Pethia conchonius)": "Rosado é maior (10-14 cm) e prateado/rosado, não dourado uniforme."
       },
       "tamanhoCm": "3-4",
       "coresPredominantes": "dourado e prateado",
@@ -1034,7 +1037,7 @@
     {
       "id": 50,
       "grupo": "Anabantídeos (Labirintídeos)",
-      "nomeComum": "Colisa Lalia",
+      "nomeComum": "Colisa Lalia / Gourami Anão",
       "nomeCientifico": "Trichogaster lalius",
       "variedade": "",
       "descricaoVisual": "O Colisa Lalia possui um corpo levemente comprimido lateralmente, com uma silhueta ovalada e compacta. Sua altura é relativamente alta em comparação ao comprimento, conferindo-lhe uma aparência robusta.",
@@ -1045,7 +1048,8 @@
       ],
       "diferenciacaoDe": {
         "Colisa fasciata": "Possui faixas mais largas e menos coloridas",
-        "Trichopodus trichopterus": "Corpo mais alongado e nadadeiras menos longas"
+        "Trichopodus trichopterus": "Corpo mais alongado e nadadeiras menos longas",
+        "Nome Colisa vs Gourami Anão": "SÃO O MESMO PEIXE (Trichogaster lalius). No Brasil é mais conhecido como COLISA; \"Gourami Anão\" é o nome internacional. Variedades: azul, vermelho (flame), neon, arco-íris — todas são a mesma espécie."
       },
       "tamanhoCm": "5-7",
       "coresPredominantes": "azul, vermelho e verde",
@@ -2740,7 +2744,7 @@
     {
       "id": 144,
       "grupo": "Anabantídeos (Labirintídeos)",
-      "nomeComum": "Gourami Anão",
+      "nomeComum": "Gourami Anão / Colisa",
       "nomeCientifico": "Trichogaster lalius",
       "variedade": "anão",
       "descricaoVisual": "O Gourami Anão apresenta um corpo compacto e ligeiramente alongado, com uma silhueta que se estreita em direção à cauda. Suas cores variam entre tons de azul, verde e vermelho, com listras verticais distintas que se estendem ao longo do corpo.",
@@ -2751,7 +2755,8 @@
       ],
       "diferenciacaoDe": {
         "Gourami de três faixas (Trichopodus trichopterus)": "Possui três faixas horizontais e é geralmente maior",
-        "Gourami Dourado (Trichopodus aurea)": "Tem coloração predominantemente dourada e corpo mais robusto"
+        "Gourami Dourado (Trichopodus aurea)": "Tem coloração predominantemente dourada e corpo mais robusto",
+        "Nome Colisa vs Gourami Anão": "SÃO O MESMO PEIXE (Trichogaster lalius). \"Colisa\" é o nome popular no Brasil; \"Gourami Anão\" é o internacional."
       },
       "tamanhoCm": "4-6",
       "coresPredominantes": "azul, verde e vermelho",
@@ -2772,7 +2777,8 @@
       ],
       "diferenciacaoDe": {
         "Gourami de Dourado (Trichopodus trichopterus)": "O Gourami de Dourado possui uma coloração mais uniforme e menos iridescente, além de nadadeiras mais largas.",
-        "Gourami Azul (Trichopodus trichopterus var. blue)": "O Gourami Azul é predominantemente azul, sem as marcas vermelhas e verdes do Arco-Íris."
+        "Gourami Azul (Trichopodus trichopterus var. blue)": "O Gourami Azul é predominantemente azul, sem as marcas vermelhas e verdes do Arco-Íris.",
+        "Nome Colisa vs Gourami": "Esta variedade arco-íris TAMBÉM é Trichogaster lalius, ou seja, também é chamada de COLISA no Brasil."
       },
       "tamanhoCm": "6-8",
       "coresPredominantes": "azul, verde e vermelho",
@@ -4249,6 +4255,50 @@
       },
       "tamanhoCm": "4-5",
       "coresPredominantes": "rosa-avermelhado",
+      "fonteFotos": 0,
+      "numeroFotosAnalisadas": 0
+    },
+    {
+      "id": 226,
+      "grupo": "Poecilídeos e Ovovivíparos",
+      "nomeComum": "Platy Mickey",
+      "nomeCientifico": "Xiphophorus maculatus",
+      "variedade": "mickey mouse",
+      "descricaoVisual": "Platy da variedade Mickey Mouse: corpo compacto e alto (4-6 cm), com a MARCA registrada de 3 manchas escuras na base da cauda formando o rosto do Mickey Mouse (uma mancha grande + duas pequenas como orelhas). Corpo geralmente avermelhado/alaranjado com a marca preta. Sem espada na cauda (diferente do Espada).",
+      "caracteristicasChave": [
+        "marca de 3 manchas escuras na cauda (rosto do Mickey)",
+        "corpo compacto e alto",
+        "4-6 cm",
+        "sem espada na cauda"
+      ],
+      "diferenciacaoDe": {
+        "Molinésia (Poecilia sphenops/velifera)": "Molinésia é MAIOR (8-12 cm), corpo mais alongado, nadadeira dorsal maior e NUNCA tem a marca do Mickey na cauda. Platy Mickey tem a marca de 3 manchas.",
+        "Espada (Xiphophorus hellerii)": "Espada tem prolongamento em ESPADA na cauda; Platy Mickey tem cauda normal em leque com a marca."
+      },
+      "tamanhoCm": "4-6",
+      "coresPredominantes": "vermelho/laranja com marca preta na cauda",
+      "fonteFotos": 0,
+      "numeroFotosAnalisadas": 0
+    },
+    {
+      "id": 227,
+      "grupo": "Tetras e Peixes de Cardume",
+      "nomeComum": "Tetra Fortuna",
+      "nomeCientifico": "Moenkhausia costae",
+      "variedade": "",
+      "descricaoVisual": "Tetra de corpo alongado e comprimido lateralmente (5-7 cm), prateado com brilho metálico e faixa horizontal escura discreta ao longo do corpo. Nadadeiras transparentes com leve tom amarelado. Aspecto geral prateado-brilhante, sem manchas grandes.",
+      "caracteristicasChave": [
+        "prateado com brilho metálico",
+        "faixa horizontal escura discreta",
+        "5-7 cm",
+        "nadadeiras transparentes amareladas"
+      ],
+      "diferenciacaoDe": {
+        "Tetra Limão (Hyphessobrycon pulchripinnis)": "Limão é AMARELO-limão vivo por todo o corpo; Fortuna é PRATEADO com brilho, sem amarelo intenso.",
+        "Tetra Prata genérico": "Fortuna tem a faixa horizontal escura discreta; outros prateados podem não ter."
+      },
+      "tamanhoCm": "5-7",
+      "coresPredominantes": "prateado com brilho metálico",
       "fonteFotos": 0,
       "numeroFotosAnalisadas": 0
     },

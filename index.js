@@ -34,6 +34,7 @@ const telemetriaStore = require('./telemetriaStore');
 const iaUsoStore = require('./iaUsoStore');
 const pushStore = require('./pushStore');
 const testerStore = require('./testerStore');
+const feedbackStore = require('./feedbackStore');
 const cacheStore = require('./cacheStore');
 const pagamentosStore = require('./pagamentosStore');
 const contasStore = require('./contasStore');
@@ -620,6 +621,10 @@ const FEW_SHOT_EXAMPLES =
   '20) ALGAS por foto: Filamentosa = fios verdes longos (como cabelo). Peteca/BBA = tufos PRETOS/escuros rígidos nas bordas. ' +
   'Marrom = poeira marrom no vidro/plantas (aquário novo). Água verde = água turva esverdeada inteira. ' +
   'Green spot = pontos verdes rígidos no vidro. ' +
+  '21) Tetra Rosa (Hyphessobrycon bentosi) vs Rosado (H. rosaceus) vs Serpae (H. eques): Rosa = corpo ALTO em disco, rosa-avermelhado uniforme, dorsal alta com mancha escura na base. ' +
+  'Rosado = corpo mais alongado, faixa prateada discreta. Serpae = mancha preta em VÍRGULA atrás da guelra. ' +
+  '22) Polypterus (PEIXE primitivo africano) vs Axolote (ANFÍBIO mexicano): Polypterus tem corpo cilíndrico com ESCAMAS em losango, dorsal em ESPINHOS isolados, nadadeiras peitorais em leque, SEM patas, SEM brânquias externas. ' +
+  'Axolote tem BRÂNQUIAS externas plumosas na cabeça, 4 PATAS, corpo liso SEM escamas. NUNCA confunda: peixe com escamas ≠ anfíbio com patas. ' +
   'REGRAS DE ESCOPO: este app identifica FAUNA AQUÁTICA DE ÁGUA DOCE ornamental de aquários, lagos e terrários — ' +
   'peixes, invertebrados (camarões, caramujos, lagostas, caranguejos), anfíbios (axolotes, rãs) e repteis aquáticos (tigre d\'água, tartarugas). ' +
   'NUNCA identifique animais TERRESTRES (gatos, cachorros, pássaros) nem MARINHOS (peixes de recife, coral, anêmonas marinhas).';
@@ -1449,13 +1454,15 @@ app.post('/identify', async (req, res) => {
       }
     }
 
-    // Enriquecimento SpeciesLink: se não é o principal, funde a origem no principal.
+    // Enriquecimento SpeciesLink: ocorrência no Brasil NÃO é origem nativa
+    // (ex.: axolote mexicano pode ter registro em zoológico brasileiro).
+    // Por isso, NUNCA sobrescreve o campo origem — apenas anexa a observação.
+    // A origem autoritativa vem do catálogo via aplicarFichaCanonica abaixo.
     const splEnriq = resultados.find((x) => x.nome === 'SpeciesLink' && x.r);
     if (splEnriq && melhor.nome !== 'SpeciesLink') {
-      const origemSpl = splEnriq.r.origem;
-      if (origemSpl && origemSpl !== '—') {
-        melhor.r.origem = melhor.r.origem && melhor.r.origem !== '—' ? melhor.r.origem : origemSpl;
-        melhor.r.observacoes = [melhor.r.observacoes, splEnriq.r.observacoes].filter(Boolean).join(' ');
+      const obsSpl = splEnriq.r.observacoes;
+      if (obsSpl) {
+        melhor.r.observacoes = [melhor.r.observacoes, obsSpl].filter(Boolean).join(' ');
       }
     }
 
@@ -4090,6 +4097,15 @@ function obterCatalogoCanonico() {
       const chaveN = normalizarTxt(nc);
       if (!porNc.has(chaveN)) porNc.set(chaveN, e);
     }
+    // Aliases (palavrasChave): cobre nomes em inglês e variações
+    // (ex.: "Axolotl" → Axolote, "Ember Tetra" → Tetra Âmbar).
+    const pws = e.palavrasChave || e.keywords || [];
+    if (Array.isArray(pws)) {
+      for (const pw of pws) {
+        const chaveP = normalizarTxt(String(pw || ''));
+        if (chaveP && chaveP.length >= 3 && !porNc.has(chaveP)) porNc.set(chaveP, e);
+      }
+    }
   }
   catalogoCanonico = { porCi, porNc, todos };
   return catalogoCanonico;
@@ -4566,6 +4582,37 @@ app.delete('/tester/admin/:dispositivoId', (req, res) => {
   const removido = testerStore.remover(req.params.dispositivoId);
   if (!removido) return res.status(404).json({ erro: 'Dispositivo não encontrado.' });
   res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// FEEDBACK DE IDENTIFICAÇÃO (app tester)
+// O usuário informa quando a identificação errou e sugere o nome correto
+// (com autocomplete dos nomes do catálogo no app, para padronizar).
+// Os registros alimentam o dataset de revisão e futuras melhorias.
+// ---------------------------------------------------------------------------
+app.post('/feedback-identificacao', (req, res) => {
+  const { hashImagem, resultadoErrado, nomeCorretoSugerido, dispositivoId, origem } = req.body || {};
+  if (!nomeCorretoSugerido || !String(nomeCorretoSugerido).trim()) {
+    return res.status(400).json({ erro: 'Informe o nome correto sugerido.' });
+  }
+  try {
+    const registro = feedbackStore.registrar({
+      hashImagem,
+      resultadoErrado: resultadoErrado || null,
+      nomeCorretoSugerido,
+      dispositivoId,
+      origem: origem || 'tester',
+    });
+    res.json({ ok: true, id: registro.id });
+  } catch (e) {
+    console.error('Falha ao registrar feedback:', e.message);
+    res.status(500).json({ erro: 'Não foi possível registrar. Tente de novo.' });
+  }
+});
+
+app.get('/feedback-identificacao/admin', (req, res) => {
+  if (!exigirAdmin(req, res)) return;
+  res.json(feedbackStore.resumo());
 });
 
 // ---------------------------------------------------------------------------

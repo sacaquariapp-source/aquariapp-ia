@@ -4188,6 +4188,71 @@
       "numeroFotosAnalisadas": 2
     },
     {
+      "id": 223,
+      "grupo": "Ciclídeos Africanos",
+      "nomeComum": "Zebra Oblíquo",
+      "nomeCientifico": "Haplochromis obliquidens",
+      "variedade": "",
+      "descricaoVisual": "Ciclídeo do LAGO VICTORIA (não do Malawi), corpo ovalado e alongado de 8-10 cm. Macho com corpo laranja/avermelhado e 6-8 barras OBLÍQUAS (diagonais, inclinadas para trás) escuras no flanco. Fêmea prateada/olivácea com barras escuras mais discretas. Boca terminal de ciclídeo, nadadeiras arredondadas, vive em cardume. NÃO tem barbilhões no queixo.",
+      "caracteristicasChave": [
+        "barras OBLÍQUAS diagonais (não verticais)",
+        "origem Lago Victoria",
+        "macho laranja com barras escuras",
+        "sem barbilhões"
+      ],
+      "diferenciacaoDe": {
+        "Maylandia zebra (Zebra do Malawi)": "Zebra tem listras VERTICAIS pretas e brancas; obliquidens tem barras OBLÍQUAS diagonais.",
+        "Goatfish / Serranus (marinhos)": "São MARINHOS com barbilhões no queixo; obliquidens é de ÁGUA DOCE sem barbilhões."
+      },
+      "tamanhoCm": "8-10",
+      "coresPredominantes": "laranja/avermelhado com barras escuras",
+      "fonteFotos": 0,
+      "numeroFotosAnalisadas": 0
+    },
+    {
+      "id": 224,
+      "grupo": "Peixes Primitivos",
+      "nomeComum": "Polypterus Senegalus",
+      "nomeCientifico": "Polypterus senegalus",
+      "variedade": "",
+      "descricaoVisual": "Peixe primitivo africano de corpo LONGO e cilíndrico como uma enguia/cobra (20-35 cm), coberto de escamas ganoides grossas em padrão de losangos. Cabeça achatada com narinas tubulares. Nadadeira dorsal dividida em vários espinhos isolados (pínulas). Nadadeiras peitorais em forma de leque que usa como \"patas\". Variedade albina é branco/rosada com olhos vermelhos. Respira ar atmosférico.",
+      "caracteristicasChave": [
+        "corpo longo cilíndrico com escamas em losango",
+        "dorsal em espinhos isolados",
+        "nadadeiras peitorais em leque",
+        "respira ar"
+      ],
+      "diferenciacaoDe": {
+        "Axolote (Ambystoma mexicanum)": "Axolote é ANFÍBIO com brânquias externas plumosas e 4 patas; Polypterus é PEIXE com escamas e nadadeiras, sem patas nem brânquias externas.",
+        "Enguia / Moreia": "Polypterus tem escamas ganoides visíveis e dorsal em espinhos; enguias têm pele lisa."
+      },
+      "tamanhoCm": "20-35",
+      "coresPredominantes": "cinza-oliva (selvagem) ou branco/rosa (albino)",
+      "fonteFotos": 0,
+      "numeroFotosAnalisadas": 0
+    },
+    {
+      "id": 225,
+      "grupo": "Tetras e Peixes de Cardume",
+      "nomeComum": "Tetra Rosa",
+      "nomeCientifico": "Hyphessobrycon bentosi",
+      "variedade": "",
+      "descricaoVisual": "Tetra de corpo alto e comprimido lateralmente (formato de disco achatado), 4-5 cm, coloração ROSA-avermelhada uniforme com brilho metálico. Nadadeira dorsal alta com mancha escura na base e ponta branca. Nadadeiras avermelhadas. Sem faixa horizontal marcante.",
+      "caracteristicasChave": [
+        "corpo alto em disco",
+        "rosa-avermelhado uniforme",
+        "dorsal alta com mancha escura na base"
+      ],
+      "diferenciacaoDe": {
+        "Tetra Rosado (Hyphessobrycon rosaceus)": "Rosado tem corpo mais alongado e faixa prateada discreta; Rosa (bentosi) tem corpo mais alto em disco e cor mais uniforme.",
+        "Tetra Serpae (Hyphessobrycon eques)": "Serpae tem mancha preta em forma de vírgula atrás da guelra; Rosa não tem."
+      },
+      "tamanhoCm": "4-5",
+      "coresPredominantes": "rosa-avermelhado",
+      "fonteFotos": 0,
+      "numeroFotosAnalisadas": 0
+    },
+    {
       "id": 901,
       "grupo": "Invertebrados (Camarões)",
       "nomeComum": "Camarão Red Cherry",

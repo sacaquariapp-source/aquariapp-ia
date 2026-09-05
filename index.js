@@ -985,6 +985,14 @@ async function viaGemini(base64, mime, textoExtra, sistemaPrompt) {
   return normalizarResultado({ provedor: 'Gemini', ...dados });
 }
 
+// PASSO B — Ficha por NOME (sem imagem): o "palpite web" (nomeAncora da Google
+// Vision) vira a âncora e o Gemini TEXTO monta a ficha completa (barato, sem
+// gastar visão). Evita que o Gemini alucine vendo a foto e melhora a ficha
+// quando o nome vem da web. Reusa o formato de /buscar-nome (PROMPT_BUSCA_NOME).
+async function viaGeminiTextoFicha(nome) {
+  return viaGemini(null, null, nome, PROMPT_BUSCA_NOME);
+}
+
 // Refino de decisão: quando os provedores discordam ou a confiança é baixa, uma
 // chamada extra do Gemini Flash vê a foto + a lista curta de candidatos e
 // escolhe a espécie final (restringida à lista). Custo baixo (~US$ 0,002) e só
@@ -1329,6 +1337,27 @@ app.post('/identify', async (req, res) => {
   }
 
   if (resultados.length > 0) {
+    // PASSO B — "palpite web" como âncora de ficha: quando a Google Vision
+    // apontou um nome (nomeAncora), o Gemini TEXTO monta a ficha completa
+    // (sem imagem, barato). Esse resultado entra no ensemble como "FichaTexto":
+    // concorda com a Vision (bônus de concordância) e preenche a ficha.
+    let ancoraFicha = null;
+    {
+      const gv = resultados.find((x) => x.nome === 'GoogleVision' && x.r && x.r.nomeAncora);
+      if (gv && process.env.GEMINI_API_KEY) {
+        try {
+          const ficha = await viaGeminiTextoFicha(gv.r.nomeAncora);
+          if (ficha && ficha.nomeCientifico && ficha.nomeCientifico !== 'Não identificado') {
+            ancoraFicha = { nomeAncora: gv.r.nomeAncora, ficha };
+            resultados.push({ nome: 'FichaTexto', r: { ...ficha, provedor: 'FichaTexto' } });
+          }
+        } catch (e) {
+          console.warn('Passo B (ficha por nome) falhou:', e.message);
+          erros.push(`FichaTexto: ${e.message}`);
+        }
+      }
+    }
+
     // Confiança PONDERADA + ENSEMBLE: especialistas valem mais que IAs
     // genéricas, mas a concordância entre provedores (mesma espécie canônica)
     // e a canonicalização no catálogo entram na decisão.
@@ -1341,6 +1370,7 @@ app.post('/identify', async (req, res) => {
       SpeciesLink: 1.3,
       Gemini: 1.0,
       OpenAI: 1.0,
+      FichaTexto: 1.0,
     };
     const pesoDe = (x) =>
       x.nome === 'GoogleVision' && x.r && x.r.tipo === 'flora' ? 2.0 : PESOS[x.nome] || 1.0;
@@ -1482,10 +1512,28 @@ app.post('/identify', async (req, res) => {
     if (melhor && melhor.r) {
       melhor.r = aplicarFichaCanonica(melhor.r, resolverNoCatalogo(melhor.r));
     }
+    // Merge da ficha do Passo B (Gemini texto) como fallback dos campos que o
+    // vencedor ainda não preencheu (ex.: GoogleVision devolve '—' em quase tudo).
+    if (ancoraFicha) {
+      const alvo = melhor.r || {};
+      const fb = ancoraFicha.ficha || {};
+      const camposFicha = ['familia', 'origem', 'tamanho', 'temperatura', 'ph', 'dureza', 'dieta',
+        'comportamento', 'aquarioMinimo', 'dificuldade', 'iluminacao', 'co2', 'crescimento',
+        'tipoPlanta', 'observacoes', 'nomesPopulares'];
+      for (const campo of camposFicha) {
+        const atual = alvo[campo];
+        const v = fb[campo];
+        if ((!atual || atual === '—' || atual === '') && v && v !== '—' && v !== '') {
+          alvo[campo] = v;
+        }
+      }
+      alvo.nomeAncora = ancoraFicha.nomeAncora;
+      melhor.r = alvo;
+    }
     const enr = await comFoto(melhor.r);
     // Une as opções dos demais provedores quando houver divergência, com score.
     const opcoesExtras = resultados
-      .filter((x) => x !== melhor && x.r && x.r.nomeComum && x.nome !== 'SpeciesLink')
+      .filter((x) => x !== melhor && x.r && x.r.nomeComum && x.nome !== 'SpeciesLink' && x.nome !== 'FichaTexto')
       .map((x) => {
         const peso = pesoDe(x);
         const c = Number(x.r.confianca) || 0;
@@ -1505,6 +1553,8 @@ app.post('/identify', async (req, res) => {
     enr.confiancaGeral =
       confPrincipal >= 80 ? 'alta' : confPrincipal >= 60 ? 'media' : 'baixa';
     enr.provedor = melhor.nome;
+    enr.nomeAncora = (melhor.r && melhor.r.nomeAncora) || null;
+    enr.fotoEscura = !!(melhor.r && melhor.r.fotoEscura);
     if (hashCache) {
       cacheStore.salvarResultado(hashCache, {
         provedor: enr.provedor,
@@ -1528,6 +1578,7 @@ app.post('/identify', async (req, res) => {
         tipoPlanta: enr.tipoPlanta,
         observacoes: enr.observacoes,
         foto: enr.foto,
+        nomeAncora: enr.nomeAncora || null,
         opcoes: enr.opcoes || [],
         alternativas: enr.alternativas || [],
         confiancaGeral: enr.confiancaGeral || null,
@@ -3336,10 +3387,16 @@ function visaoNomeEhEspecie(texto) {
   return palavras >= 1 && palavras <= 5;
 }
 
-async function viaGoogleVision(base64, mime) {
+async function viaGoogleVision(base64, mime, recorteBase64) {
   if (!process.env.GOOGLE_VISION_API_KEY) {
     throw new Error('Google Vision: chave não configurada');
   }
+  // 1 ou 2 imagens numa única chamada: a foto inteira e, se o app enviou, o
+  // recorte do assunto — mais sinal focado no peixe/planta.
+  const imagens = [
+    { content: base64 },
+    ...(recorteBase64 ? [{ content: recorteBase64 }] : []),
+  ];
   const res = await fetch(
     `https://vision.googleapis.com/v1/images:annotate?key=${encodeURIComponent(process.env.GOOGLE_VISION_API_KEY)}`,
     {
@@ -3347,15 +3404,15 @@ async function viaGoogleVision(base64, mime) {
       signal: AbortSignal.timeout(AI_TIMEOUT_MS),
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        requests: [
-          {
-            image: { content: base64 },
-            features: [
-              { type: 'LABEL_DETECTION', maxResults: 12 },
-              { type: 'WEB_DETECTION', maxResults: 12 },
-            ],
-          },
-        ],
+        requests: imagens.map((image) => ({
+          image,
+          features: [
+            { type: 'LABEL_DETECTION', maxResults: 25 },
+            { type: 'WEB_DETECTION', maxResults: 25 },
+            { type: 'OBJECT_LOCALIZATION', maxResults: 5 },
+            { type: 'IMAGE_PROPERTIES', maxResults: 1 },
+          ],
+        })),
       }),
     }
   );
@@ -3365,32 +3422,90 @@ async function viaGoogleVision(base64, mime) {
     throw new Error(`Google Vision (HTTP ${res.status}): ${corpo.slice(0, 200)}`);
   }
   const json = await res.json();
-  const resp = json.responses && json.responses[0];
-  if (!resp) throw new Error('Google Vision: resposta vazia');
-  if (resp.error) throw new Error(`Google Vision: ${resp.error.message || 'erro da API'}`);
+  const respostas = (json.responses || []).filter((resp) => resp && !resp.error);
+  if (respostas.length === 0) {
+    const erro = (json.responses && json.responses[0] && json.responses[0].error) || {};
+    throw new Error(`Google Vision: ${erro.message || 'resposta vazia'}`);
+  }
 
-  const labels = (resp.labelAnnotations || []).map((l) => ({
-    texto: String(l.description || ''),
-    score: Math.round((l.score || 0) * 100),
-  }));
-  const web = resp.webDetection || {};
-  const entidades = (web.webEntities || []).map((e) => ({
-    texto: String(e.description || ''),
-    score: Math.round((e.score || 0) * 100),
-  }));
-  const bestGuess = web.bestGuessLabels && web.bestGuessLabels[0] ? web.bestGuessLabels[0].label : '';
+  // União dos sinais de todas as imagens, deduplicando por texto normalizado
+  // (mantém o maior score de cada candidato).
+  const labels = [];
+  const entidades = [];
+  const paginasSimilares = [];
+  const objetos = [];
+  const bestGuesses = [];
+  let corMedia = null;
+  const vistosLabels = new Set();
+  const vistosEntidades = new Set();
+  const vistosPaginas = new Set();
+  const vistosObjetos = new Set();
+
+  for (const resp of respostas) {
+    for (const l of resp.labelAnnotations || []) {
+      const texto = String(l.description || '');
+      const chave = texto.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (!chave || vistosLabels.has(chave)) continue;
+      vistosLabels.add(chave);
+      labels.push({ texto, score: Math.round((l.score || 0) * 100) });
+    }
+    for (const e of (resp.webDetection && resp.webDetection.webEntities) || []) {
+      const texto = String(e.description || '');
+      const chave = texto.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (!chave || vistosEntidades.has(chave)) continue;
+      vistosEntidades.add(chave);
+      entidades.push({ texto, score: Math.round((e.score || 0) * 100) });
+    }
+    for (const p of (resp.webDetection && resp.webDetection.pagesWithMatchingImages) || []) {
+      const titulo = String(p.pageTitle || '');
+      const chave = titulo.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (!titulo || vistosPaginas.has(chave)) continue;
+      vistosPaginas.add(chave);
+      paginasSimilares.push({ titulo, score: 75 });
+    }
+    for (const o of resp.localizedObjectAnnotations || []) {
+      const nome = String(o.name || '');
+      const chave = nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      if (!chave || vistosObjetos.has(chave)) continue;
+      vistosObjetos.add(chave);
+      objetos.push({ nome, score: Math.round((o.score || 0) * 100) });
+    }
+    const bg =
+      resp.webDetection && resp.webDetection.bestGuessLabels && resp.webDetection.bestGuessLabels[0]
+        ? resp.webDetection.bestGuessLabels[0].label
+        : '';
+    if (bg) bestGuesses.push(bg);
+    if (corMedia == null) {
+      const props =
+        resp.imagePropertiesAnnotation &&
+        resp.imagePropertiesAnnotation.dominantColors &&
+        resp.imagePropertiesAnnotation.dominantColors.colors;
+      const c = props && props[0] && props[0].color;
+      if (c) {
+        corMedia = (0.299 * (c.red || 0) + 0.587 * (c.green || 0) + 0.114 * (c.blue || 0)) / 255;
+      }
+    }
+  }
+
+  labels.sort((a, b) => b.score - a.score);
+  entidades.sort((a, b) => b.score - a.score);
+
+  // Foto escura (luminância dominante baixa) → sinaliza ao front para pedir
+  // nova foto com melhor luz antes de gastar o refino.
+  const fotoEscura = corMedia != null && corMedia < 0.18;
 
   const todoTexto = [
     ...labels.map((l) => l.texto),
     ...entidades.map((e) => e.texto),
-    bestGuess,
+    ...objetos.map((o) => o.nome),
+    ...bestGuesses,
   ]
     .join(' ')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '');
 
-  // Fauna vs flora pelos sinais do texto.
+  // Fauna vs flora pelos sinais do texto (labels + entidades + objetos).
   const sinaisFlora = ['plant', 'planta', 'flowering plant', 'aquatic plant', 'planta aquatica', 'aquarium plant',
     'leaf', 'folha', 'moss', 'musgo', 'fern', 'samambaia', 'alga', 'algae', 'anubias',
     'echinodorus', 'cryptocoryne', 'bucephalandra', 'java moss', 'tropica', 'pteridophyte',
@@ -3430,12 +3545,8 @@ async function viaGoogleVision(base64, mime) {
   // costumam conter o nome da espécie (é o sinal mais parecido com o Google
   // Lens — "fotos como esta são chamadas de X na web"). Extraímos binômios
   // e nomes populares desses títulos como candidatos extras.
-  const paginasSimilares = (web.pagesWithMatchingImages || [])
-    .map((p) => String(p.pageTitle || ''))
-    .filter((t) => t.length >= 4)
-    .slice(0, 10);
   const candidatosPaginas = [];
-  for (const titulo of paginasSimilares) {
+  for (const titulo of paginasSimilares.map((p) => p.titulo).slice(0, 12)) {
     // Binômio no título (ex.: "Poecilia reticulata - Wikipedia")
     let m;
     const copiaB = new RegExp(binomial.source, 'g');
@@ -3447,7 +3558,6 @@ async function viaGoogleVision(base64, mime) {
       candidatosPaginas.push({ texto: candidato, score: 75 });
     }
     // Nome popular no título antes de separadores comuns (" - ", " | ", " – ").
-    // (Teste binomial inline porque ehBinomial só é definido abaixo nesta função.)
     const antesSep = titulo.split(/\s[-–|]\s/)[0].trim();
     if (antesSep.length >= 4 && antesSep.length <= 60 && !/^[A-ZÀ-Ü][a-zà-ü]+\s+[a-zà-ü]+$/.test(antesSep)) {
       candidatosPaginas.push({ texto: antesSep, score: 65 });
@@ -3458,33 +3568,45 @@ async function viaGoogleVision(base64, mime) {
   // que NÃO é binomial (ex.: "Anubias", "Guppy") sobre o nome científico como
   // nome comum (ex.: "Anubias barteri" vira o nomeCientifico, não o popular).
   // O bestGuess (palpite direto da web = sinal tipo Lens) tem prioridade máxima.
+  const ehBinomial = (t) => /^[A-ZÀ-Ü][a-zà-ü]+\s+[a-zà-ü]+$/.test(String(t || '').trim());
   const candidatos = [
-    ...(bestGuess ? [{ texto: bestGuess, score: 95 }] : []),
+    ...bestGuesses.map((b) => ({ texto: b, score: 95 })),
     ...candidatosPaginas,
     ...entidades.map((e) => ({ texto: e.texto, score: e.score })),
     ...labels.map((l) => ({ texto: l.texto, score: l.score })),
   ];
-  const ehBinomial = (t) => /^[A-ZÀ-Ü][a-zà-ü]+\s+[a-zà-ü]+$/.test(t.trim());
   const especies = candidatos.filter((c) => visaoNomeEhEspecie(c.texto)).sort((a, b) => b.score - a.score);
   const naoBinomial = especies.filter((c) => !ehBinomial(c.texto));
   const melhorNome = naoBinomial[0] || especies[0] || null;
   // Se só há rótulos genéricos/partes do corpo (ex.: "fins", "tail") e nenhum
   // nome de espécie, descarta o provider em vez de devolver ficha vazia.
   if (!melhorNome) throw new Error('Google Vision: nenhum nome de espécie identificado (só rótulos genéricos)');
+
+  // "Palpite web" (nomeAncora): o que a web diria — usado pelo Passo B para
+  // montar a ficha com Gemini TEXTO (barato, sem imagem).
+  const nomeAncora = melhorNome.texto;
   const nomeComum = melhorNome.texto;
   const confianca = Math.min(100, melhorNome.score || 0);
 
   if (!tipo && labels.length === 0) throw new Error('Google Vision: nenhum rótulo identificado');
 
-  return normalizarResultado({
-    provedor: 'GoogleVision',
-    confianca,
-    tipo,
-    nomeComum,
-    nomeCientifico,
-    familia: '—',
-    observacoes: `Identificação via Google Cloud Vision (labels + web). ${nomeCientifico ? 'Nome científico extraído das entidades web.' : ''}`.trim(),
-  });
+  const candidatosVisao = especies.slice(0, 5).map((c) => ({ nome: c.texto, score: c.score }));
+
+  return {
+    ...normalizarResultado({
+      provedor: 'GoogleVision',
+      confianca,
+      tipo,
+      nomeComum,
+      nomeCientifico,
+      familia: '—',
+      observacoes: `Identificação via Google Cloud Vision (labels + web). ${nomeCientifico ? 'Nome científico extraído das entidades web.' : ''}`.trim(),
+    }),
+    nomeAncora,
+    candidatosVisao,
+    fotoEscura: !!fotoEscura,
+    objetos: objetos.map((o) => o.nome).slice(0, 5),
+  };
 }
 
 // Trefle.io — busca de PLANTAS por nome (base botânica com 400k+ espécies).
